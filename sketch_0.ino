@@ -67,7 +67,7 @@ uint16_t remaining_food_threshold_g = 0;
 uint8_t  ignored_warning_amount     = 0;
 
 bool     is_dispending              = false;
-float    fed_food_remaining_g       = 0.0f;
+float    current_food_remaining_g       = 0.0f;
 
 void connect_to_wifi() noexcept {
     WiFi.mode(WIFI_STA);
@@ -130,10 +130,16 @@ void dump_property() noexcept {
 }
 
 void dispend_food() noexcept {
-    return;
+    
+    set_rgb_led(LEDState::ON, ColourIndex::GREEN);
+
+    // DISPEND FOOD CODE LATER - I HAVE NO SERVO YET.
+
+    set_rgb_led(LEDState::BLINK, ColourIndex::GREEN, 3, 100, 100);
+
 }
 
-void handle_tngr_update_signal(pson &in) {
+void handle_tngr_update_signal(pson &in) noexcept {
     if (!static_cast<bool>(in))
         return;
 
@@ -152,17 +158,74 @@ void handle_tngr_update_signal(pson &in) {
     delay(500);
 }
 
-void handle_tngr_manual_feed_signal(pson &in) {
+void handle_tngr_manual_feed_signal(pson &in) noexcept {
     if (!static_cast<bool>(in) || is_emergency_halt_on)
         return;
 
-    set_rgb_led(LEDState::ON, ColourIndex::GREEN);
-
     dispend_food();
 
-    set_rgb_led(LEDState::BLINK, ColourIndex::GREEN, 3, 1000, 500);
-
     ignored_warning_amount = 0;
+}
+
+bool is_wifi_connected() noexcept {
+    return WiFi.status() == WL_CONNECTED;
+}
+
+bool is_data_valid() noexcept {
+    return manual_feed_amount_g == 0 || auto_feed_amount_g == 0 || remaining_food_threshold_g == 0;
+}
+
+bool is_met_dispend_condition() noexcept {
+    return current_food_remaining_g >= remaining_food_threshold_g;
+}
+
+void handle_wifi_disconnected() noexcept {
+    while (!is_wifi_connected()) {
+        connect_to_wifi();
+        set_rgb_led(LEDState::BLINK, ColourIndex::YELLOW, 3, 100, 100);
+
+        delay(3000);
+    }
+}
+
+void handle_data_invalid() noexcept {
+    while (!is_data_valid()) {
+        update_device_property();
+        set_rgb_led(LEDState::BLINK, ColourIndex::RED, 3, 100, 100);
+        dump_property();
+
+        delay(3000);
+    }
+}
+
+void handle_emergency_halt() noexcept {
+    set_rgb_led(LEDState::BLINK, ColourIndex::RED, 3, 1000, 500);
+}
+
+void handle_automatic_mode_loop() noexcept {
+    if (!is_met_dispend_condition())
+        return;
+
+    dispend_food();
+}
+
+void handle_manual_mode_loop() noexcept {
+    if (!is_met_dispend_condition())
+        return;
+
+    ++ignored_warning_amount;
+    
+    if (manual_feed_warning)
+        set_rgb_led(LEDState::BLINK, ColourIndex::ORANGE, 3, 100, 100);
+
+    if (current_food_remaining_g < AUTO_BYPASS_FOOD_AMOUNT && ignored_warning_amount >= AUTO_BYPASS_WARNING_AMOUNT && allow_neglect_bypass) {
+        dispend_food();
+        ignored_warning_amount = 0;
+    }
+}
+
+void set_mode_corresponding_rgb_led_colour() noexcept {
+    set_rgb_led(LEDState::ON, is_running_automatically ? ColourIndex::WHITE : ColourIndex::ORANGE);
 }
 
 void setup() {
@@ -186,11 +249,8 @@ void setup() {
 
     Serial.println("[/] ESTABLISHING WIFI CONNECTION...");
 
-    while (WiFi.status() != WL_CONNECTED) {
-        connect_to_wifi();
-
-        set_rgb_led(LEDState::BLINK, ColourIndex::YELLOW, 3, 100, 100);
-        delay(1000);
+    if (!is_wifi_connected()) {
+        handle_wifi_disconnected();
     }
 
     Serial.println("[+] WIFI CONNECTED!");
@@ -207,79 +267,38 @@ void setup() {
     Serial.println("[+] INITIALISATION COMPLETED!");
 
     set_rgb_led(LEDState::BLINK, ColourIndex::GREEN, 3, 100, 100);
-
     set_rgb_led(LEDState::ON, ColourIndex::RED);
 }
 
 void loop() {
-
-    wifi_status = WiFi.status();
-    fed_food_remaining_g = 0.0f;
-
-    // If WiFi is disconnected, keep retrying (every 1s) and do nothing else -
-    // until the connection is re-established.
-    if (wifi_status != WL_CONNECTED) {
-        connect_to_wifi();
-
-        set_rgb_led(LEDState::BLINK, ColourIndex::YELLOW, 3, 100, 100);
-        delay(1000);
-
+    if (!is_wifi_connected()) {
+        handle_wifi_disconnected();
+        
         return;
     }
 
     Thing.handle();
 
-    // If these value stucks at its invalid state (all zeros)
-    // Keep fetching the property until all the value is what it is meant to be.
-    while (manual_feed_amount_g == 0 || auto_feed_amount_g == 0 || remaining_food_threshold_g == 0) {
-        update_device_property();
-        dump_property();
+    if (!is_data_valid()) {
+        handle_data_invalid();
 
-        set_rgb_led(LEDState::BLINK, ColourIndex::RED, 3, 100, 100);
+        return;
     }
 
-    // If emergency halt is on, do nothing, resetting the loop -
-    // until emergency halt is turned off.
     if (is_emergency_halt_on) {
-        set_rgb_led(LEDState::BLINK, ColourIndex::RED, 1, 1000, 500);
+        handle_emergency_halt();        
 
         return;
     }
 
-    // If not automatic mode is disabled, do nothing even tho connections are met.
-    if (!is_running_automatically) {
-        set_rgb_led(LEDState::ON, ColourIndex::ORANGE);
+    set_mode_corresponding_rgb_led_colour();
 
-        // Flash the light to warnn the user that the food should be refilled.
-        // Only if it's enabled tho.
-        if (fed_food_remaining_g < remaining_food_threshold_g) {
-            ignored_warning_amount += 1;
-
-            if (manual_feed_warning) {
-                set_rgb_led(LEDState::BLINK, ColourIndex::ORANGE, 3, 100, 100);
-                set_rgb_led(LEDState::ON, ColourIndex::ORANGE);
-            }
-
-            if (allow_neglect_bypass && (ignored_warning_amount > AUTO_BYPASS_WARNING_AMOUNT || AUTO_BYPASS_FOOD_AMOUNT)) {
-                set_rgb_led(LEDState::BLINK, ColourIndex::GREEN, 3, 100, 100);
-                set_rgb_led(LEDState::ON, ColourIndex::GREEN);
-
-                dispend_food();
-
-                set_rgb_led(LEDState::OFF);
-            }
-
-            delay(10000);
-        }
-
-        return;
+    if (is_running_automatically) {
+        handle_automatic_mode_loop();
+    }
+    else {
+        handle_manual_mode_loop();
     }
 
-    if (fed_food_remaining_g < remaining_food_threshold_g) {
-        set_rgb_led(LEDState::ON, ColourIndex::WHITE);
-
-        dispend_food();
-
-        return;
-    }
+    set_mode_corresponding_rgb_led_colour();
 }
