@@ -1,40 +1,44 @@
 /*
 #! AUTOMATIC PET FEEDER [PROTOTYPE] - ESPino32 + Thinger.io
-__.
-.-".'                      .--.            _..._
-.' .'                     .'    \       .-""  __ ""-.
-/  /                     .'       : --..:__.-""  ""-. \
-:  :                     /         ;.d$$    sbp_.-""-:_:
-;  :                    : ._       :P .-.   ,"TP
-:   \                    \  T--...-; : d$b  :d$b
-\   `.                   \  `..'    ; $ $  ;$ $
-`.   "-.                 ).        : T$P  :T$P
-\..---^..             /           `-'    `._`._
-.'        "-.       .-"                     T$$$b
-/             "-._.-"               ._        '^' ;
-:                                    \.`.         /
-;                                -.   \`."-._.-'-'
-:                                 .'\   \ \ \ \
-;  ;                             /:  \   \ \ . ;
-:   :                            ,  ;  `.  `.;  :
-;    \        ;                     ;    "-._:  ;
-:      `.      :                     :         \/
-;       /"-.    ;                    :
-:       /    "-. :                  : ;
-:     .'        T-;                 ; ;
-;    :          ; ;                /  :
-;    ;          : :              .'    ;
-:    :            ;:         _..-"\     :
-:     \           : ;       /      \     ;
-;    . '.         '-;      /        ;    :
-;  \  ; :           :     :         :    '-.
-'.._L.:-'           :     ;         ;    . `.
-                    ;    :          :  \  ; :
-                    :    '-..       '.._L.:-'
-                    ;     , `.
-                    :   \  ; :
-                    '..__L.:-'
+ __.
+ .-".'                      .--.            _..._
+ .' .'                     .'    \       .-""  __ ""-.
+ /  /                     .'       : --..:__.-""  ""-. \
+ :  :                     /         ;.d$$    sbp_.-""-:_:
+ ;  :                    : ._       :P .-.   ,"TP
+ :   \                    \  T--...-; : d$b  :d$b
+ \   `.                   \  `..'    ; $ $  ;$ $
+ `.   "-.                 ).        : T$P  :T$P
+ \..---^..             /           `-'    `._`._
+ .'        "-.       .-"                     T$$$b
+ /             "-._.-"               ._        '^' ;
+ :                                    \.`.         /
+ ;                                -.   \`."-._.-'-'
+ :                                 .'\   \ \ \ \
+ ;  ;                             /:  \   \ \ . ;
+ :   :                            ,  ;  `.  `.;  :
+ ;    \        ;                     ;    "-._:  ;
+ :      `.      :                     :         \/
+ ;       /"-.    ;                    :
+ :       /    "-. :                  : ;
+ :     .'        T-;                 ; ;
+ ;    :          ; ;                /  :
+ ;    ;          : :              .'    ;
+ :    :            ;:         _..-"\     :
+ :     \           : ;       /      \     ;
+ ;    . '.         '-;      /        ;    :
+ ;  \  ; :           :     :         :    '-.
+ '.._L.:-'           :     ;         ;    . `.
+                     ;    :          :  \  ; :
+                     :    '-..       '.._L.:-'
+                     ;     , `.
+                     :   \  ; :
+                     '..__L.:-'
 [WOOF WOOF] - I'm hungry now!
+TODOs:
+    - Complete servo's movement controller.
+    - Complete tngr's calibration mechanism to calculate how long it has to open the servo.
+
 */
 
 // [PREPROCESSORS]
@@ -110,6 +114,11 @@ enum class ColourIndex : uint8_t {
     WHITE
 };
 
+enum class ServoState : int16_t {
+    OFF = 0,
+    ON  = 180
+};
+
 // Oulala.
 ThingerESP32 Thing(TNGR_USERNAME, TNGR_DEVICE_ID, TNGR_DEVICE_CRED);
 pson         data;
@@ -126,11 +135,13 @@ bool     allow_neglect_bypass       = false;
 uint16_t auto_feed_amount_g         = 0;
 uint16_t manual_feed_amount_g       = 0;
 uint16_t remaining_food_threshold_g = 0;
+uint16_t calib_food_drop_in_100ms_g = 0;
 
 uint8_t  ignored_warning_amount     = 0;
 
 bool     is_dispending              = false;
-float    current_food_remaining_g       = 0.0f;
+float    current_food_remaining_g   = 0.0f;
+int16_t  current_servo_angle_deg    = 0;
 
 // [FUNCTIONS]
 // Neither do I know what these are.
@@ -149,15 +160,15 @@ void connect_to_wifi() noexcept {
 // Description: Sets or handles the state of the RGB LED.
 // Params:
 //     LEDState) state
-//         the LED state (ON, OFF, etc.)
+//         The LED state (ON, OFF, etc.).
 //     (ColourIndex) colour
-//         colour index for the RGB value map
+//         Colour index for the RGB value map.
 //     (uint8_t) repeat_amount
-//         how many times the LED should blink
+//         How many times the LED should blink.
 //     (uint16_t) blink_up_duration_ms
-//         how long the LED stays ON in each blink
+//         How long the LED stays ON in each blink.
 //     (uint16_t) blink_down_duration_ms
-//         how long the LED stays OFF between blinks
+//         How long the LED stays OFF between blinks.
 // Returns: NONE
 constexpr void set_rgb_led(
     const LEDState    state,
@@ -197,6 +208,50 @@ constexpr void set_rgb_led(
     set_rgb_led(LEDState::OFF);
 }
 
+
+// Function: calc_servo_movement_angle
+// Description: handle_tngr_re_calibrate_signalulate how much and/or in which direction the servo has to rotate.
+// Params:
+//     (int16_t) angle_deg
+//         Which direction does the servo want to face to.
+// Returns: (uint16_t) How far the servo needs to rotate.
+constexpr int16_t handle_tngr_re_calibrate_signal_servo_movement_angle(int16_t angle_deg) noexcept {
+    // Round up the number to the range of 0-360 because that's all the circle has to offer.
+    current_servo_angle_deg %= 360;
+    angle_deg               %= 360;
+
+    // This checl wether the servo needs to move clockwise or vise versa.
+    return current_servo_angle_deg > angle_deg ? current_servo_angle_deg - angle_deg : current_servo_angle_deg + angle_deg;
+}
+
+
+// Function: set_servo_to_angle
+// Description: Sets the rotation angle of the servo.
+// Params:
+//     (int16_t) angle_deg
+//         Sets the servo to face to said direction.
+// Returns: NONE
+void set_servo_to_angle(const int16_t angle_deg) noexcept {
+    // If the current value is the same as the new one - just ignore.
+    if (current_servo_angle_deg == angle_deg)
+        return;
+
+    const int16_t angle_needed_to_rotate = handle_tngr_re_calibrate_signal_servo_movement_angle(angle_deg);
+
+    // Will continue later.
+    // analog_write(...);
+}
+
+// Function: set_servo_to_state_preset
+// Description: Sets the rotation angle of the servo to a preset angle/degree based on the state.
+// Params:
+//     (ServoState) state
+//         Sets the servo to face to the preset direction.
+// Returns: NONE
+void set_servo_to_state_preset(const ServoState state) noexcept {
+    set_servo_to_angle(static_cast<int16_t>(state));
+}
+
 // Function: update_device_property
 // Description: Updates local variables with values from the device's general property data.
 // Params: NONE
@@ -230,14 +285,31 @@ void dump_property() noexcept {
     Serial.printf("    REMAINING THRESHOLD (G) : %u\n", remaining_food_threshold_g);
 }
 
+// Function: handle_tngr_re_calibrate_signal_dispend_time_g_ms
+// Description: Calculates how long it takes (in ms) to dispend x (in g) amount of food.
+// Params:
+//     (uint16_t) food_amount_g
+//         How much food (in g) is gonna be dispended.
+// Returns: (uint32_t) How long it takes to dispend said amount of food (in ms).
+constexpr uint16_t calc_dispend_time_g_ms(const uint16_t food_amount_g) noexcept {
+
+}
+
 // Function: dispend_food
 // Description: Handles the food dispensing process (servo control to be added later).
-// Params: NONE
+// Params:
+//     (bool) is_called_by_manual_feed
+//         Wheter this function is being called by a manual feed button.
 // Returns: NONE
-void dispend_food() noexcept {
+void dispend_food(const bool is_called_by_manual_feed = false) noexcept {
     set_rgb_led(LEDState::ON, ColourIndex::GREEN);
 
-    // Dispense food code will be added later when servo is available.
+    // Calling with manual feed button & automatically called one is calculated differently.
+    const uint32_t dispend_time_ms = calc_dispend_time_g_ms(is_called_by_manual_feed ? manual_feed_amount_g : auto_feed_amount_g - remaining_food_g);
+    
+    set_servo_to_state_preset(ServoState::ON);
+    delay(static_cast<uint32_t>(dispend_time_ms));
+    set_servo_to_state_preset(ServoState::OFF);
 
     set_rgb_led(LEDState::BLINK, ColourIndex::GREEN, 3, 100, 100);
 }
@@ -289,6 +361,29 @@ void handle_tngr_manual_feed_signal(pson &in) noexcept {
     ignored_warning_amount = 0;
 }
 
+// Function: handle_tngr_re_calibrate_signal
+// Description: Handles the re-calibration signal from Thinger.io and update calibration property.
+// Params:
+//     (pson&) in
+//         Input payload from Thinger.io containing the manual feed signal.
+// Returns: NONE
+void handle_tngr_re_calibrate_signal(pson &in) noexcept {
+    // Ignore if button is released or emergency halt is active.
+    if (!static_cast<bool>(in) || is_emergency_halt_on)
+        return;
+
+    setRGBLED(LEDState::ON, ColourIndex::PURPLE);
+    delay(300);
+
+
+    // READ VALUE -> STORE
+    // DISPEND FOOD FOR 100MS
+    // READ VALUE -> COMPARE TO THE FIRST ONE, STORE.
+
+    // Thing.write_property("calibration_100ms_food_drop_g", ...);
+
+    setRGBLED(LEDState::BLINK, ColourIndex::PURPLE, 3, 100, 100);
+}
 
 // Function: is_wifi_connected
 // Description: Checks if the device is connected to WiFi.
@@ -302,15 +397,15 @@ bool is_wifi_connected() noexcept {
 // Description: Checks if the data values are valid (non-zero).
 // Params: NONE
 // Returns: (bool) true if any data is invalid, false otherwise.
-bool is_data_valid() noexcept {
-    return manual_feed_amount_g == 0 || auto_feed_amount_g == 0 || remaining_food_threshold_g == 0;
+constexpr bool is_data_valid() noexcept {
+    return manual_feed_amount_g == 0 || auto_feed_amount_g == 0 || remaining_food_threshold_g == 0 || calib_food_drop_in_100ms_g == 0;
 }
 
 // Function: is_met_dispend_condition
 // Description: Checks if the remaining food meets the dispensing condition.
 // Params: NONE
 // Returns: (bool) true if remaining food is above or equal to the threshold, false otherwise.
-bool is_met_dispend_condition() noexcept {
+constexpr bool is_met_dispend_condition() noexcept {
     return current_food_remaining_g >= remaining_food_threshold_g;
 }
 
@@ -402,10 +497,13 @@ void set_mode_corresponding_rgb_led_colour() noexcept {
 // Params: NONE
 // Returns: NONE
 void setup_pin_mode() noexcept {
-    // RBGLED PINS.
     pinMode(PIN_RGBLED_R, OUTPUT);
     pinMode(PIN_RGBLED_G, OUTPUT);
     pinMode(PIN_RGBLED_B, OUTPUT);
+
+    pinMode(PIN_RELAY_L298N_5V, OUTPUT);
+    pinMode(PIN_FSR_ESEN068_5V, OUTPUT);
+    pinMode(PIN_FSR_ESEN068_DATA, INPUT);
 }
 
 // Function: setup_handlers
@@ -415,6 +513,7 @@ void setup_pin_mode() noexcept {
 void setup_handlers() noexcept {
     Thing["update_signal"] << handle_tngr_update_signal;
     Thing["manual_feed"]   << handle_tngr_manual_feed_signal;
+    Thing["re_calibrate_signal"] << handle_tngr_re_calibrate_signal;
 }
 
 void setup() {
