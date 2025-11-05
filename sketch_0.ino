@@ -43,6 +43,7 @@ TODOs:
 
 // [PREPROCESSORS]
 // That's it.
+#include <algorithm>
 #include <Arduino.h>
 #include <ThingerESP32.h>
 #include <WiFi.h>
@@ -117,6 +118,12 @@ enum class ColourIndex : uint8_t {
 enum class ServoState : int16_t {
     OFF = 0,
     ON  = 180
+};
+
+enum class DispendMode : uint8_t {
+    SYSTEM_CALL,
+    USER_CALL,
+    CALIBRATION
 };
 
 // Oulala.
@@ -268,6 +275,7 @@ void update_device_property() noexcept {
     manual_feed_amount_g       = static_cast<uint16_t>(data["manual_feed_amount_g"]);
     manual_feed_warning        = static_cast<bool>    (data["manual_feed_warning"]);
     remaining_food_threshold_g = static_cast<uint16_t>(data["remaining_food_threshold_g"]);
+    calib_food_drop_in_100ms_g = static_cast<uint16_t>(data["calibration_100ms_food_drop_g"]);
 }
 
 // Function: dump_property
@@ -283,6 +291,7 @@ void dump_property() noexcept {
     Serial.printf("    MANUAL FEED AMOUNT (G)  : %u\n", manual_feed_amount_g);
     Serial.printf("    MANUAL FEED WARNING     : %s\n", manual_feed_warning      ? "ENABLED" : "DISABLED");
     Serial.printf("    REMAINING THRESHOLD (G) : %u\n", remaining_food_threshold_g);
+    Serial.printf("    CALIBRATED DROP RATE (G): %u\n", calib_food_drop_in_100ms_g);
 }
 
 // Function: handle_tngr_re_calibrate_signal_dispend_time_g_ms
@@ -292,23 +301,39 @@ void dump_property() noexcept {
 //         How much food (in g) is gonna be dispended.
 // Returns: (uint32_t) How long it takes to dispend said amount of food (in ms).
 constexpr uint16_t calc_dispend_time_g_ms(const uint16_t food_amount_g) noexcept {
+    if (calib_food_drop_in_100ms_g == 0)
+        return 0;
 
+    // Wala!
+    const float dispend_time_ms = (static_cast<float>(food_amount_g) / calib_food_drop_in_100ms_g) * 100.0f;
+    return static_cast<uint16_t>(dispend_time_ms);
 }
 
 // Function: dispend_food
 // Description: Handles the food dispensing process (servo control to be added later).
 // Params:
-//     (bool) is_called_by_manual_feed
-//         Wheter this function is being called by a manual feed button.
+//     (DispendMode) mode
+//         How should this function behave.
 // Returns: NONE
-void dispend_food(const bool is_called_by_manual_feed = false) noexcept {
+void dispend_food(const DispendMode mode) noexcept {
     set_rgb_led(LEDState::ON, ColourIndex::GREEN);
 
+    const uint8_t u_mode = static_cast<uint8_t>(mode);
+
     // Calling with manual feed button & automatically called one is calculated differently.
-    const uint32_t dispend_time_ms = calc_dispend_time_g_ms(is_called_by_manual_feed ? manual_feed_amount_g : auto_feed_amount_g - remaining_food_g);
+    const uint16_t dispend_time_each_mode[3] = {
+        /*SYSTEM_CALL*/ std::clamp(static_cast<uint16_t>(auto_feed_amount_g - current_food_remaining_g), static_cast<uint16_t>(0), auto_feed_amount_g),
+        /*USER_CALL*/   calc_dispend_time_g_ms(manual_feed_amount_g),
+        /*CALIBRATION*/ 100
+    };
+
+    if ((mode == DispendMode::SYSTEM_CALL && dispend_time_each_mode[u_mode] == 0) || (mode == DispendMode::USER_CALL && dispend_time_each_mode[u_mode] == 0))
+        return;
+
+    const uint16_t dispend_time_ms = calc_dispend_time_g_ms(dispend_time_each_mode[u_mode]);
     
     set_servo_to_state_preset(ServoState::ON);
-    delay(static_cast<uint32_t>(dispend_time_ms));
+    delay(dispend_time_ms);
     set_servo_to_state_preset(ServoState::OFF);
 
     set_rgb_led(LEDState::BLINK, ColourIndex::GREEN, 3, 100, 100);
@@ -355,7 +380,7 @@ void handle_tngr_manual_feed_signal(pson &in) noexcept {
         return;
 
     // Nom nom nom nom.
-    dispend_food();
+    dispend_food(DispendMode::USER_CALL);
 
     // Reset ignored warning counter.
     ignored_warning_amount = 0;
@@ -372,17 +397,18 @@ void handle_tngr_re_calibrate_signal(pson &in) noexcept {
     if (!static_cast<bool>(in) || is_emergency_halt_on)
         return;
 
-    setRGBLED(LEDState::ON, ColourIndex::PURPLE);
+    set_rgb_led(LEDState::ON, ColourIndex::PURPLE);
     delay(300);
 
-
-    // READ VALUE -> STORE
+    // const float avg_weight_pre_dispense = ... / 3.0f;
+    // READ VALUE 3 TIMES THEN AVERAGE 0-> STORE
+    // dispend_food(100);
     // DISPEND FOOD FOR 100MS
     // READ VALUE -> COMPARE TO THE FIRST ONE, STORE.
 
     // Thing.write_property("calibration_100ms_food_drop_g", ...);
 
-    setRGBLED(LEDState::BLINK, ColourIndex::PURPLE, 3, 100, 100);
+    set_rgb_led(LEDState::BLINK, ColourIndex::PURPLE, 3, 100, 100);
 }
 
 // Function: is_wifi_connected
@@ -459,7 +485,7 @@ void handle_automatic_mode_loop() noexcept {
     if (!is_met_dispend_condition())
         return;
 
-    dispend_food();
+    dispend_food(DispendMode::SYSTEM_CALL);
 }
 
 // Function: handle_manual_mode_loop
@@ -479,7 +505,7 @@ void handle_manual_mode_loop() noexcept {
 
     // Auto bypass feed if ignored too many warnings and bypass is allowed.
     if (current_food_remaining_g < AUTO_BYPASS_FOOD_AMOUNT && ignored_warning_amount >= AUTO_BYPASS_WARNING_AMOUNT && allow_neglect_bypass) {
-        dispend_food();
+        dispend_food(DispendMode::SYSTEM_CALL);
         ignored_warning_amount = 0;
     }
 }
