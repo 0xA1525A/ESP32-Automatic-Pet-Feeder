@@ -84,11 +84,11 @@ constexpr void set_rgb_led(
     const uint8_t *COLOUR_RGB = COLIDX_RGB_VMAP[static_cast<uint8_t>(colour)];
 
     if (static_cast<uint8_t>(state) <= 1 || (static_cast<uint16_t>(repeat_amount) | blink_up_duration_ms | blink_down_duration_ms) == 0) {
-        const bool useRGBValue = static_cast<bool>(state);
+        const bool use_rgb_value = static_cast<bool>(state);
 
-        analogWrite(PIN_RGBLED_R, useRGBValue ? COLOUR_RGB[0] : 0x00);
-        analogWrite(PIN_RGBLED_G, useRGBValue ? COLOUR_RGB[1] : 0x00);
-        analogWrite(PIN_RGBLED_B, useRGBValue ? COLOUR_RGB[2] : 0x00);
+        analogWrite(PIN_RGBLED_R, use_rgb_value ? COLOUR_RGB[0] : 0x00);
+        analogWrite(PIN_RGBLED_G, use_rgb_value ? COLOUR_RGB[1] : 0x00);
+        analogWrite(PIN_RGBLED_B, use_rgb_value ? COLOUR_RGB[2] : 0x00);
 
         return;
     }
@@ -130,13 +130,11 @@ void dump_property() noexcept {
 }
 
 void dispend_food() noexcept {
-    
     set_rgb_led(LEDState::ON, ColourIndex::GREEN);
 
     // DISPEND FOOD CODE LATER - I HAVE NO SERVO YET.
 
     set_rgb_led(LEDState::BLINK, ColourIndex::GREEN, 3, 100, 100);
-
 }
 
 void handle_tngr_update_signal(pson &in) noexcept {
@@ -181,19 +179,23 @@ bool is_met_dispend_condition() noexcept {
 
 void handle_wifi_disconnected() noexcept {
     while (!is_wifi_connected()) {
-        connect_to_wifi();
-        set_rgb_led(LEDState::BLINK, ColourIndex::YELLOW, 3, 100, 100);
+        set_rgb_led(LEDState::ON, ColourIndex::YELLOW);
 
+        connect_to_wifi();
+
+        set_rgb_led(LEDState::BLINK, ColourIndex::YELLOW, 3, 100, 100);
         delay(3000);
     }
 }
 
 void handle_data_invalid() noexcept {
     while (!is_data_valid()) {
-        update_device_property();
-        set_rgb_led(LEDState::BLINK, ColourIndex::RED, 3, 100, 100);
-        dump_property();
+        set_rgb_led(LEDState::ON, ColourIndex::PURPLE);
 
+        update_device_property();
+
+        set_rgb_led(LEDState::BLINK, ColourIndex::PURPLE, 3, 100, 100);
+        dump_property();
         delay(3000);
     }
 }
@@ -214,7 +216,7 @@ void handle_manual_mode_loop() noexcept {
         return;
 
     ++ignored_warning_amount;
-    
+
     if (manual_feed_warning)
         set_rgb_led(LEDState::BLINK, ColourIndex::ORANGE, 3, 100, 100);
 
@@ -228,24 +230,30 @@ void set_mode_corresponding_rgb_led_colour() noexcept {
     set_rgb_led(LEDState::ON, is_running_automatically ? ColourIndex::WHITE : ColourIndex::ORANGE);
 }
 
+void setup_pin_mode() noexcept {
+    pinMode(PIN_RGBLED_R, OUTPUT);
+    pinMode(PIN_RGBLED_G, OUTPUT);
+    pinMode(PIN_RGBLED_B, OUTPUT);
+}
+
+void setup_handlers() noexcept {
+    Thing["update_signal"] << handle_tngr_update_signal;
+    Thing["manual_feed"]   << handle_tngr_manual_feed_signal;
+}
+
 void setup() {
     Serial.begin(BOARD_BAUD);
 
     Serial.println("[/] SETTING UP PINS...");
 
-    pinMode(PIN_RGBLED_R, OUTPUT);
-    pinMode(PIN_RGBLED_G, OUTPUT);
-    pinMode(PIN_RGBLED_B, OUTPUT);
-
-    set_rgb_led(LEDState::ON, ColourIndex::RED);
+    setup_pin_mode();
 
     Serial.println("[/] INITIALISING PROGRAM...");
-    delay(1000);
 
+    set_rgb_led(LEDState::ON, ColourIndex::RED);
+    delay(1000);
     set_rgb_led(LEDState::OFF);
     delay(100);
-
-    set_rgb_led(LEDState::ON, ColourIndex::YELLOW);
 
     Serial.println("[/] ESTABLISHING WIFI CONNECTION...");
 
@@ -254,15 +262,9 @@ void setup() {
     }
 
     Serial.println("[+] WIFI CONNECTED!");
-
-    set_rgb_led(LEDState::ON, ColourIndex::CYAN);
-
     Serial.println("[/] SETTING UP HANDLERS...");
 
-    Thing["update_signal"] << handle_tngr_update_signal;
-    Thing["manual_feed"]   << handle_tngr_manual_feed_signal;
-
-    set_rgb_led(LEDState::OFF);
+    setup_handlers();
 
     Serial.println("[+] INITIALISATION COMPLETED!");
 
@@ -273,7 +275,7 @@ void setup() {
 void loop() {
     if (!is_wifi_connected()) {
         handle_wifi_disconnected();
-        
+
         return;
     }
 
@@ -286,7 +288,7 @@ void loop() {
     }
 
     if (is_emergency_halt_on) {
-        handle_emergency_halt();        
+        handle_emergency_halt();
 
         return;
     }
