@@ -34,6 +34,11 @@ constexpr uint8_t COLIDX_RGB_VMAP[9][3] = {
     {0xFF, 0x50, 0xAF}
 };
 
+constexpr void     (*analog_write) (uint8_t, int)     = &analogWrite;
+constexpr void     (*digital_write)(uint8_t, uint8_t) = &digitalWrite;
+constexpr uint16_t (*analog_read)  (uint8_t)          = &analogRead;
+constexpr int      (*digital_read) (uint8_t)          = &digitalRead;
+
 enum class LEDState : uint8_t {
     OFF,
     ON,
@@ -86,9 +91,9 @@ constexpr void set_rgb_led(
     if (static_cast<uint8_t>(state) <= 1 || (static_cast<uint16_t>(repeat_amount) | blink_up_duration_ms | blink_down_duration_ms) == 0) {
         const bool use_rgb_value = static_cast<bool>(state);
 
-        analogWrite(PIN_RGBLED_R, use_rgb_value ? COLOUR_RGB[0] : 0x00);
-        analogWrite(PIN_RGBLED_G, use_rgb_value ? COLOUR_RGB[1] : 0x00);
-        analogWrite(PIN_RGBLED_B, use_rgb_value ? COLOUR_RGB[2] : 0x00);
+        analog_write(PIN_RGBLED_R, use_rgb_value ? COLOUR_RGB[0] : 0x00);
+        analog_write(PIN_RGBLED_G, use_rgb_value ? COLOUR_RGB[1] : 0x00);
+        analog_write(PIN_RGBLED_B, use_rgb_value ? COLOUR_RGB[2] : 0x00);
 
         return;
     }
