@@ -154,13 +154,39 @@ int16_t  current_servo_angle_deg    = 0;
 // Neither do I know what these are.
 // I wrote these all by myself - but I can't explain a line of it.
 
-// Function: connect_to_wifi
-// Descrption: Connects to a fucking WiFi.
+// Function: update_device_property
+// Description: Updates local variables with values from the device's general property data.
 // Params: NONE
 // Returns: NONE
-void connect_to_wifi() noexcept {
-    WiFi.mode(WIFI_STA);
-    WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+void update_device_property() noexcept {
+    // Get the latest property data from Thinger.io.
+    Thing.get_property("general_property", data);
+
+    // Update local variables with the received values.
+    is_running_automatically   = static_cast<bool>    (data["is_running_automatically"]);
+    is_emergency_halt_on       = static_cast<bool>    (data["is_emergency_halt_on"]);
+    allow_neglect_bypass       = static_cast<bool>    (data["allow_neglect_bypass"]);
+    auto_feed_amount_g         = static_cast<uint16_t>(data["auto_feed_amount_g"]);
+    manual_feed_amount_g       = static_cast<uint16_t>(data["manual_feed_amount_g"]);
+    manual_feed_warning        = static_cast<bool>    (data["manual_feed_warning"]);
+    remaining_food_threshold_g = static_cast<uint16_t>(data["remaining_food_threshold_g"]);
+    calib_food_drop_in_100ms_g = static_cast<uint16_t>(data["calibration_100ms_food_drop_g"]);
+}
+
+// Function: dump_property
+// Description: Prints the current property values to the serial monitor.
+// Params: NONE
+// Returns: NONE
+void dump_property() noexcept {
+    Serial.println("[!] NEW PROPERTY VALUES:");
+    Serial.printf("    IS RUNNING AUTOMATICALLY: %s\n", is_running_automatically ? "YES" : "NO");
+    Serial.printf("    IS EMERGENCY HALT ON    : %s\n", is_emergency_halt_on     ? "YES" : "NO");
+    Serial.printf("    ALLOW BYPASS ON NEGLECT : %s\n", allow_neglect_bypass     ? "YES" : "NO");
+    Serial.printf("    AUTO FEED AMOUNT (G)    : %u\n", auto_feed_amount_g);
+    Serial.printf("    MANUAL FEED AMOUNT (G)  : %u\n", manual_feed_amount_g);
+    Serial.printf("    MANUAL FEED WARNING     : %s\n", manual_feed_warning      ? "ENABLED" : "DISABLED");
+    Serial.printf("    REMAINING THRESHOLD (G) : %u\n", remaining_food_threshold_g);
+    Serial.printf("    CALIBRATED DROP RATE (G): %u\n", calib_food_drop_in_100ms_g);
 }
 
 // Function: set_rgb_led
@@ -215,14 +241,13 @@ constexpr void set_rgb_led(
     set_rgb_led(LEDState::OFF);
 }
 
-
 // Function: calc_servo_movement_angle
 // Description: handle_tngr_re_calibrate_signalulate how much and/or in which direction the servo has to rotate.
 // Params:
 //     (int16_t) angle_deg
 //         Which direction does the servo want to face to.
 // Returns: (uint16_t) How far the servo needs to rotate.
-constexpr int16_t handle_tngr_re_calibrate_signal_servo_movement_angle(int16_t angle_deg) noexcept {
+constexpr int16_t calc_servo_movement_angle(int16_t angle_deg) noexcept {
     // Round up the number to the range of 0-360 because that's all the circle has to offer.
     current_servo_angle_deg %= 360;
     angle_deg               %= 360;
@@ -243,7 +268,7 @@ void set_servo_to_angle(const int16_t angle_deg) noexcept {
     if (current_servo_angle_deg == angle_deg)
         return;
 
-    const int16_t angle_needed_to_rotate = handle_tngr_re_calibrate_signal_servo_movement_angle(angle_deg);
+    const int16_t angle_needed_to_rotate = calc_servo_movement_angle(angle_deg);
 
     // Will continue later.
     // analog_write(...);
@@ -257,41 +282,6 @@ void set_servo_to_angle(const int16_t angle_deg) noexcept {
 // Returns: NONE
 void set_servo_to_state_preset(const ServoState state) noexcept {
     set_servo_to_angle(static_cast<int16_t>(state));
-}
-
-// Function: update_device_property
-// Description: Updates local variables with values from the device's general property data.
-// Params: NONE
-// Returns: NONE
-void update_device_property() noexcept {
-    // Get the latest property data from Thinger.io.
-    Thing.get_property("general_property", data);
-
-    // Update local variables with the received values.
-    is_running_automatically   = static_cast<bool>    (data["is_running_automatically"]);
-    is_emergency_halt_on       = static_cast<bool>    (data["is_emergency_halt_on"]);
-    allow_neglect_bypass       = static_cast<bool>    (data["allow_neglect_bypass"]);
-    auto_feed_amount_g         = static_cast<uint16_t>(data["auto_feed_amount_g"]);
-    manual_feed_amount_g       = static_cast<uint16_t>(data["manual_feed_amount_g"]);
-    manual_feed_warning        = static_cast<bool>    (data["manual_feed_warning"]);
-    remaining_food_threshold_g = static_cast<uint16_t>(data["remaining_food_threshold_g"]);
-    calib_food_drop_in_100ms_g = static_cast<uint16_t>(data["calibration_100ms_food_drop_g"]);
-}
-
-// Function: dump_property
-// Description: Prints the current property values to the serial monitor.
-// Params: NONE
-// Returns: NONE
-void dump_property() noexcept {
-    Serial.println("[!] NEW PROPERTY VALUES:");
-    Serial.printf("    IS RUNNING AUTOMATICALLY: %s\n", is_running_automatically ? "YES" : "NO");
-    Serial.printf("    IS EMERGENCY HALT ON    : %s\n", is_emergency_halt_on     ? "YES" : "NO");
-    Serial.printf("    ALLOW BYPASS ON NEGLECT : %s\n", allow_neglect_bypass     ? "YES" : "NO");
-    Serial.printf("    AUTO FEED AMOUNT (G)    : %u\n", auto_feed_amount_g);
-    Serial.printf("    MANUAL FEED AMOUNT (G)  : %u\n", manual_feed_amount_g);
-    Serial.printf("    MANUAL FEED WARNING     : %s\n", manual_feed_warning      ? "ENABLED" : "DISABLED");
-    Serial.printf("    REMAINING THRESHOLD (G) : %u\n", remaining_food_threshold_g);
-    Serial.printf("    CALIBRATED DROP RATE (G): %u\n", calib_food_drop_in_100ms_g);
 }
 
 // Function: handle_tngr_re_calibrate_signal_dispend_time_g_ms
@@ -337,6 +327,124 @@ void dispend_food(const DispendMode mode) noexcept {
     set_servo_to_state_preset(ServoState::OFF);
 
     set_rgb_led(LEDState::BLINK, ColourIndex::GREEN, 3, 100, 100);
+}
+
+// [UTILITIES AND HANDLERS]
+
+// Function: is_wifi_connected
+// Description: Checks if the device is connected to WiFi.
+// Params: NONE
+// Returns: (bool) true if connected, false otherwise.
+bool is_wifi_connected() noexcept {
+    return WiFi.status() == WL_CONNECTED;
+}
+
+// Function: connect_to_wifi
+// Descrption: Connects to a fucking WiFi.
+// Params: NONE
+// Returns: NONE
+void connect_to_wifi() noexcept {
+    WiFi.mode(WIFI_STA);
+    WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+}
+
+// Function: handle_wifi_disconnected
+// Description: Tries to reconnect to WiFi while disconnected.
+// Params: NONE
+// Returns: NONE
+void handle_wifi_disconnected() noexcept {
+    while (!is_wifi_connected()) {
+        set_rgb_led(LEDState::ON, ColourIndex::YELLOW);
+
+        connect_to_wifi();
+
+        // Blink to indicate reconnection attempt.
+        set_rgb_led(LEDState::BLINK, ColourIndex::YELLOW, 3, 100, 100);
+        delay(3000);
+    }
+}
+
+// Function: is_data_valid
+// Description: Checks if the data values are valid (non-zero).
+// Params: NONE
+// Returns: (bool) true if any data is invalid, false otherwise.
+constexpr bool is_data_valid() noexcept {
+    return manual_feed_amount_g == 0 || auto_feed_amount_g == 0 || remaining_food_threshold_g == 0 || calib_food_drop_in_100ms_g == 0;
+}
+
+// Function: handle_data_invalid
+// Description: Repeatedly tries to update device properties until data becomes valid.
+// Params: NONE
+// Returns: NONE
+void handle_data_invalid() noexcept {
+    while (!is_data_valid()) {
+        set_rgb_led(LEDState::ON, ColourIndex::PURPLE);
+
+        update_device_property();
+
+        // Blink to indicate update attempt.
+        set_rgb_led(LEDState::BLINK, ColourIndex::PURPLE, 3, 100, 100);
+        dump_property();
+        delay(3000);
+    }
+}
+
+// Function: is_met_dispend_condition
+// Description: Checks if the remaining food meets the dispensing condition.
+// Params: NONE
+// Returns: (bool) true if remaining food is above or equal to the threshold, false otherwise.
+constexpr bool is_met_dispend_condition() noexcept {
+    return current_food_remaining_g >= remaining_food_threshold_g;
+}
+
+// Function: handle_automatic_mode_loop
+// Description: Handles automatic feeding when the condition is met.
+// Params: NONE
+// Returns: NONE
+void handle_automatic_mode_loop() noexcept {
+    // Skip if condition not met.
+    if (!is_met_dispend_condition())
+        return;
+
+    dispend_food(DispendMode::SYSTEM_CALL);
+}
+
+// Function: handle_manual_mode_loop
+// Description: Handles manual feeding mode and warning logic.
+// Params: NONE
+// Returns: NONE
+void handle_manual_mode_loop() noexcept {
+    // Skip if condition not met.
+    if (!is_met_dispend_condition())
+        return;
+
+    ++ignored_warning_amount;
+
+    // Blink orange if manual feed warning is enabled.
+    if (manual_feed_warning)
+        set_rgb_led(LEDState::BLINK, ColourIndex::ORANGE, 3, 100, 100);
+
+    // Auto bypass feed if ignored too many warnings and bypass is allowed.
+    if (current_food_remaining_g < AUTO_BYPASS_FOOD_AMOUNT && ignored_warning_amount >= AUTO_BYPASS_WARNING_AMOUNT && allow_neglect_bypass) {
+        dispend_food(DispendMode::SYSTEM_CALL);
+        ignored_warning_amount = 0;
+    }
+}
+
+// Function: handle_emergency_halt
+// Description: Handles emergency halt state with a red blinking LED.
+// Params: NONE
+// Returns: NONE
+void handle_emergency_halt() noexcept {
+    set_rgb_led(LEDState::BLINK, ColourIndex::RED, 3, 1000, 500);
+}
+
+// Function: set_mode_corresponding_rgb_led_colour
+// Description: Sets the RGB LED colour based on the current mode.
+// Params: NONE
+// Returns: NONE
+void set_mode_corresponding_rgb_led_colour() noexcept {
+    set_rgb_led(LEDState::ON, is_running_automatically ? ColourIndex::WHITE : ColourIndex::ORANGE);
 }
 
 // Function: handle_tngr_update_signal
@@ -411,113 +519,6 @@ void handle_tngr_re_calibrate_signal(pson &in) noexcept {
     set_rgb_led(LEDState::BLINK, ColourIndex::PURPLE, 3, 100, 100);
 }
 
-// Function: is_wifi_connected
-// Description: Checks if the device is connected to WiFi.
-// Params: NONE
-// Returns: (bool) true if connected, false otherwise.
-bool is_wifi_connected() noexcept {
-    return WiFi.status() == WL_CONNECTED;
-}
-
-// Function: is_data_valid
-// Description: Checks if the data values are valid (non-zero).
-// Params: NONE
-// Returns: (bool) true if any data is invalid, false otherwise.
-constexpr bool is_data_valid() noexcept {
-    return manual_feed_amount_g == 0 || auto_feed_amount_g == 0 || remaining_food_threshold_g == 0 || calib_food_drop_in_100ms_g == 0;
-}
-
-// Function: is_met_dispend_condition
-// Description: Checks if the remaining food meets the dispensing condition.
-// Params: NONE
-// Returns: (bool) true if remaining food is above or equal to the threshold, false otherwise.
-constexpr bool is_met_dispend_condition() noexcept {
-    return current_food_remaining_g >= remaining_food_threshold_g;
-}
-
-// Function: handle_wifi_disconnected
-// Description: Tries to reconnect to WiFi while disconnected.
-// Params: NONE
-// Returns: NONE
-void handle_wifi_disconnected() noexcept {
-    while (!is_wifi_connected()) {
-        set_rgb_led(LEDState::ON, ColourIndex::YELLOW);
-
-        connect_to_wifi();
-
-        // Blink to indicate reconnection attempt.
-        set_rgb_led(LEDState::BLINK, ColourIndex::YELLOW, 3, 100, 100);
-        delay(3000);
-    }
-}
-
-// Function: handle_data_invalid
-// Description: Repeatedly tries to update device properties until data becomes valid.
-// Params: NONE
-// Returns: NONE
-void handle_data_invalid() noexcept {
-    while (!is_data_valid()) {
-        set_rgb_led(LEDState::ON, ColourIndex::PURPLE);
-
-        update_device_property();
-
-        // Blink to indicate update attempt.
-        set_rgb_led(LEDState::BLINK, ColourIndex::PURPLE, 3, 100, 100);
-        dump_property();
-        delay(3000);
-    }
-}
-
-// Function: handle_emergency_halt
-// Description: Handles emergency halt state with a red blinking LED.
-// Params: NONE
-// Returns: NONE
-void handle_emergency_halt() noexcept {
-    set_rgb_led(LEDState::BLINK, ColourIndex::RED, 3, 1000, 500);
-}
-
-// Function: handle_automatic_mode_loop
-// Description: Handles automatic feeding when the condition is met.
-// Params: NONE
-// Returns: NONE
-void handle_automatic_mode_loop() noexcept {
-    // Skip if condition not met.
-    if (!is_met_dispend_condition())
-        return;
-
-    dispend_food(DispendMode::SYSTEM_CALL);
-}
-
-// Function: handle_manual_mode_loop
-// Description: Handles manual feeding mode and warning logic.
-// Params: NONE
-// Returns: NONE
-void handle_manual_mode_loop() noexcept {
-    // Skip if condition not met.
-    if (!is_met_dispend_condition())
-        return;
-
-    ++ignored_warning_amount;
-
-    // Blink orange if manual feed warning is enabled.
-    if (manual_feed_warning)
-        set_rgb_led(LEDState::BLINK, ColourIndex::ORANGE, 3, 100, 100);
-
-    // Auto bypass feed if ignored too many warnings and bypass is allowed.
-    if (current_food_remaining_g < AUTO_BYPASS_FOOD_AMOUNT && ignored_warning_amount >= AUTO_BYPASS_WARNING_AMOUNT && allow_neglect_bypass) {
-        dispend_food(DispendMode::SYSTEM_CALL);
-        ignored_warning_amount = 0;
-    }
-}
-
-// Function: set_mode_corresponding_rgb_led_colour
-// Description: Sets the RGB LED colour based on the current mode.
-// Params: NONE
-// Returns: NONE
-void set_mode_corresponding_rgb_led_colour() noexcept {
-    set_rgb_led(LEDState::ON, is_running_automatically ? ColourIndex::WHITE : ColourIndex::ORANGE);
-}
-
 // Function: setup_pin_mode
 // Description: Sets all required pin modes for the RGB LED.
 // Params: NONE
@@ -542,6 +543,8 @@ void setup_handlers() noexcept {
     Thing["re_calibrate_signal"] << handle_tngr_re_calibrate_signal;
 }
 
+// [MAIN AREA - KEEP OUT!!]
+// Have a bloody nice day!
 void setup() {
     Serial.begin(BOARD_BAUD);
 
