@@ -147,7 +147,7 @@ uint16_t calib_food_drop_in_100ms_g = 0;
 uint8_t  ignored_warning_amount     = 0;
 
 bool     is_dispending              = false;
-float    current_food_remaining_g   = 0.0f;
+uint16_t current_food_remaining_g   = 0;
 int16_t  current_servo_angle_deg    = 0;
 
 // [FUNCTIONS]
@@ -322,16 +322,16 @@ void dispend_food(const DispendMode mode) noexcept {
     const uint8_t u_mode = static_cast<uint8_t>(mode);
 
     // Calling with manual feed button & automatically called one is calculated differently.
-    const uint16_t dispend_time_each_mode[3] = {
-        /*SYSTEM_CALL*/ std::clamp(static_cast<uint16_t>(auto_feed_amount_g - current_food_remaining_g), static_cast<uint16_t>(0), auto_feed_amount_g),
+    const uint16_t dispend_time_choices[3] = {
+        /*SYSTEM_CALL*/ calc_dispend_time_g_ms(std::clamp(static_cast<uint16_t>(auto_feed_amount_g - current_food_remaining_g), static_cast<uint16_t>(0), auto_feed_amount_g)),
         /*USER_CALL*/   calc_dispend_time_g_ms(manual_feed_amount_g),
         /*CALIBRATION*/ 100
     };
 
-    if ((mode == DispendMode::SYSTEM_CALL && dispend_time_each_mode[u_mode] == 0) || (mode == DispendMode::USER_CALL && dispend_time_each_mode[u_mode] == 0))
-        return;
+    const uint16_t dispend_time_ms = dispend_time_choices[u_mode];
 
-    const uint16_t dispend_time_ms = calc_dispend_time_g_ms(dispend_time_each_mode[u_mode]);
+    if ((mode == DispendMode::SYSTEM_CALL && dispend_time_ms == 0) || (mode == DispendMode::USER_CALL && dispend_time_ms == 0))
+        return;
     
     set_servo_to_state_preset(ServoState::ON);
     delay(dispend_time_ms);
