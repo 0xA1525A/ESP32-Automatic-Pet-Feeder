@@ -398,7 +398,7 @@ void handle_wifi_disconnected() noexcept {
 // Params: NONE
 // Returns: (bool) true if any data is invalid, false otherwise.
 constexpr bool is_data_valid() noexcept {
-    return manual_feed_amount_g == 0 || auto_feed_amount_g == 0 || remaining_food_threshold_g == 0 || calib_food_drop_in_100ms_g == 0;
+    return manual_feed_amount_g != 0 && auto_feed_amount_g != 0 && remaining_food_threshold_g != 0 && calib_food_drop_in_100ms_g != 0;
 }
 
 // Function: handle_data_invalid
