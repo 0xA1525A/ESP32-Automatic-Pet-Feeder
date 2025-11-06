@@ -241,21 +241,32 @@ constexpr void set_rgb_led(
     set_rgb_led(LEDState::OFF);
 }
 
+// Function: get_current_fsr_g
+// Description: Read the current force value from FSR (in g).
+// Params: NONE
+// Returns: (uint16_t) Read value from the FSR (in g).
+uint16_t get_current_fsr_g() noexcept {
+    // WAIT FOR THE FSR WIRE.
+    // CANNOT CONTINUE DUE TO LACK OF HARDWARE.
+    return 0;
+}
+
 // Function: calc_servo_movement_angle
-// Description: handle_tngr_re_calibrate_signalulate how much and/or in which direction the servo has to rotate.
+// Description: Calculate how much and/or in which direction the servo has to rotate.
 // Params:
 //     (int16_t) angle_deg
 //         Which direction does the servo want to face to.
 // Returns: (uint16_t) How far the servo needs to rotate.
 constexpr int16_t calc_servo_movement_angle(int16_t angle_deg) noexcept {
     // Round up the number to the range of 0-360 because that's all the circle has to offer.
-    current_servo_angle_deg %= 360;
-    angle_deg               %= 360;
+    constexpr uint16_t FULL_CIRCLE_DEGREE = 360
+
+    current_servo_angle_deg %= FULL_CIRCLE_DEGREE;
+    angle_deg               %= FULL_CIRCLE_DEGREE;
 
     // This checl wether the servo needs to move clockwise or vise versa.
     return current_servo_angle_deg > angle_deg ? current_servo_angle_deg - angle_deg : current_servo_angle_deg + angle_deg;
 }
-
 
 // Function: set_servo_to_angle
 // Description: Sets the rotation angle of the servo.
@@ -284,7 +295,7 @@ void set_servo_to_state_preset(const ServoState state) noexcept {
     set_servo_to_angle(static_cast<int16_t>(state));
 }
 
-// Function: handle_tngr_re_calibrate_signal_dispend_time_g_ms
+// Function: calc_dispend_time_g_ms
 // Description: Calculates how long it takes (in ms) to dispend x (in g) amount of food.
 // Params:
 //     (uint16_t) food_amount_g
