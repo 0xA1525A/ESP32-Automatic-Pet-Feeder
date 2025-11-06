@@ -259,7 +259,7 @@ uint16_t get_current_fsr_g() noexcept {
 // Returns: (uint16_t) How far the servo needs to rotate.
 constexpr int16_t calc_servo_movement_angle(int16_t angle_deg) noexcept {
     // Round up the number to the range of 0-360 because that's all the circle has to offer.
-    constexpr uint16_t FULL_CIRCLE_DEGREE = 360
+    constexpr uint16_t FULL_CIRCLE_DEGREE = 360;
 
     current_servo_angle_deg %= FULL_CIRCLE_DEGREE;
     angle_deg               %= FULL_CIRCLE_DEGREE;
@@ -319,8 +319,6 @@ constexpr uint16_t calc_dispend_time_g_ms(const uint16_t food_amount_g) noexcept
 void dispend_food(const DispendMode mode) noexcept {
     set_rgb_led(LEDState::ON, ColourIndex::GREEN);
 
-    const uint8_t u_mode = static_cast<uint8_t>(mode);
-
     // Calling with manual feed button & automatically called one is calculated differently.
     const uint16_t dispend_time_choices[3] = {
         /*SYSTEM_CALL*/ calc_dispend_time_g_ms(std::clamp(static_cast<uint16_t>(auto_feed_amount_g - current_food_remaining_g), static_cast<uint16_t>(0), auto_feed_amount_g)),
@@ -328,11 +326,12 @@ void dispend_food(const DispendMode mode) noexcept {
         /*CALIBRATION*/ 100
     };
 
-    const uint16_t dispend_time_ms = dispend_time_choices[u_mode];
+    const uint16_t dispend_time_ms = dispend_time_choices[static_cast<uint8_t>(mode)];
 
-    if ((mode == DispendMode::SYSTEM_CALL && dispend_time_ms == 0) || (mode == DispendMode::USER_CALL && dispend_time_ms == 0))
+    // If somehow the dispend time is 0, do nothing.
+    if (dispend_time_ms == 0)
         return;
-    
+
     set_servo_to_state_preset(ServoState::ON);
     delay(dispend_time_ms);
     set_servo_to_state_preset(ServoState::OFF);
