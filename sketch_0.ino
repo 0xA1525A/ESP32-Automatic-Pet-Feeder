@@ -241,6 +241,24 @@ constexpr void set_rgb_led(
     set_rgb_led(LEDState::OFF);
 }
 
+// Function: calc_resistance_to_adc
+// Description: Calculate adc from resistance.
+// Params:
+//     (uint32_t) resistance
+// Returns: (uint16_t) ADC value.
+uint16_t calc_resistance_to_adc(uint32_t resistance) noexcept {
+    return 0xFFF * (10000 / resistance + 10000);
+}
+
+// Function: calc_adc_to_g
+// Description: Calculate weight (in g) from adc.
+// Params:
+//     (uint32_t) adc
+// Returns: (uint16_t) Estimated weight (in g).
+uint16_t calc_adc_to_g(uint16_t adc) noexcept {
+    return 0.00005f * (adc ** 1.7f) * 10;
+}
+
 // Function: get_current_fsr_g
 // Description: Read the current force value from FSR (in g).
 // Params: NONE
@@ -248,6 +266,7 @@ constexpr void set_rgb_led(
 uint16_t get_current_fsr_g() noexcept {
     // WAIT FOR THE FSR WIRE.
     // CANNOT CONTINUE DUE TO LACK OF HARDWARE.
+    // calc_resistance_to_adc(analog_read(PIN_FSR_DATA));
     return 0;
 }
 
@@ -264,7 +283,7 @@ constexpr int16_t calc_servo_movement_angle(int16_t angle_deg) noexcept {
     current_servo_angle_deg %= FULL_CIRCLE_DEGREE;
     angle_deg               %= FULL_CIRCLE_DEGREE;
 
-    // This checl wether the servo needs to move clockwise or vise versa.
+    // This checl wether the servo needs to move clockwise or counter-clockwise.
     return current_servo_angle_deg > angle_deg ? current_servo_angle_deg - angle_deg : current_servo_angle_deg + angle_deg;
 }
 
@@ -518,9 +537,12 @@ void handle_tngr_re_calibrate_signal(pson &in) noexcept {
     set_rgb_led(LEDState::ON, ColourIndex::PURPLE);
     delay(300);
 
-    // const float avg_weight_pre_dispense = ... / 3.0f;
+    // Calibrate the FSR.
+
+    // Calibrate the servo.
+
     // READ VALUE 3 TIMES THEN AVERAGE 0-> STORE
-    // dispend_food(100);
+    dispend_food(DispendMode::CALIBRATION);
     // DISPEND FOOD FOR 100MS
     // READ VALUE -> COMPARE TO THE FIRST ONE, STORE.
 
