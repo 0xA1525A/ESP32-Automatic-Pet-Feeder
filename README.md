@@ -1,13 +1,18 @@
 # Automatic Pet Feeder [PROTOTYPE] on ESPino32
 
 Hardware Specifications:
-- Board: ESPino32
-- Relay: L298N
-- Load Cell: Model remains unknown, but with HX711 ampliflier.
-- Wires: Maybe
+- Board: ESPino32 - [/dev/ttyUSB0 (ESP32 Dev Module)].
+- Relay: L298N.
+- Load Cell: Model remains unknown, but it has HX711 ampliflier.
+- Wires: Yes.
 
 Software Specifications:
-- Cloud Dashboard: Thinger.io
+- Cloud Dashboard: Thinger.io.
+- Version Controls: GitHub (Somtimes ~/.proj/apf/v.xyz if I hate myself enough.)
+- Bugs: Included (as features)
+
+Contact abt this project?: YES! Until the world caved in.
+Can you hire me?: YES PLEASE!!!!!!!! I'M TIRED OF WASHING DISHES!!!!
 
 ```diff
 - I CAN'T STOP THE LONELINESS!

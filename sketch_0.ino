@@ -1,6 +1,6 @@
 /*
 #! AUTOMATIC PET FEEDER [PROTOTYPE] - ESPino32 + Thinger.io
- __.
+    .
  .-".'                      .--.            _..._
  .' .'                     .'    \       .-""  __ ""-.
  /  /                     .'       : --..:__.-""  ""-. \
@@ -38,6 +38,7 @@
 */
 
 // [PREPROCESSORS]
+
 // That's it.
 #include <algorithm>
 #include <cmath>
@@ -48,6 +49,7 @@
 #include <L298N.h>
 
 // [ALIASES]
+
 // I hate how it looks, so I changed it.
 
 // Their old names are disgusting to look at.
@@ -68,6 +70,7 @@
 #define set_speed setSpeed
 
 // [CONSTANTS]
+
 // Here are some hard-coded values.
 // There are infinitely more magic numbers to come.
 
@@ -118,16 +121,16 @@ constexpr uint8_t PIN_LOAD_CELL_SCK  = 33;
 
 // Thinger's constants:
 constexpr char *const TNGR_USERNAME    = "";
-constexpr char *const TNGR_DEVICE_ID   = "AutomaticPetFeeder";
-constexpr char *const TNGR_DEVICE_CRED = "I reset password 67 times a day. you're not get to use my password :D";
+constexpr char *const TNGR_DEVICE_ID   = "";
+constexpr char *const TNGR_DEVICE_CRED = "";
 
 // WiFi's cconstants:
-constexpr char *const WIFI_SSID        = "";
-constexpr char *const WIFI_PASSWORD    = "";
+constexpr char *const WIFI_SSID     = "";
+constexpr char *const WIFI_PASSWORD = "";
 
 // These are here for secondary back-up plan if the owner forgot-
 // to feed their pets.
-// What an irresponsible asshole.
+// What an irresponsible arsehole.
 constexpr uint8_t AUTO_BYPASS_WARNING_AMOUNT = 10;
 constexpr uint8_t AUTO_BYPASS_FOOD_AMOUNT    = 20;
 
@@ -138,7 +141,7 @@ constexpr int8_t   LOAD_CELL_SAMPLE_AMOUNT_POW  = 7;
 constexpr uint16_t LOAD_CELL_GHOST_WEIGHT_G     = 1201;
 
 // [ENUMS]
-// All possible value of each.
+
 enum class LEDState : uint8_t {
     OFF,
     ON,
@@ -174,9 +177,6 @@ constexpr uint8_t COLIDX_RGB_VMAP[9][3] = {
     {0x80, 0x00, 0x80},
     {0xFF, 0x50, 0xAF}
 };
-
-// ServoState enum -> Corresponding rotation angle (deg).
-constexpr uint8_t SVST_DEG_VMAP[2] = {0, 180};
 
 // [CONSTRUCTOR INITIALISATION]
 
@@ -216,11 +216,11 @@ uint16_t tare_amount_since_boot     = 0;
 // Neither do I know what these are.
 // I wrote these all by myself - but I can't explain a line of it.
 
-// Function: update_device_settings
+// Function: distribute_changes
 // Description: Apply changes to device configuration after update.
 // Params: NONE
 // Returns: NONE
-void update_device_settings() noexcept {
+void distribute_changes() noexcept {
     // IDK what to do. have a nice day.
     Motor.set_speed(motor_rotation_speed);
 }
@@ -245,7 +245,7 @@ void update_device_property() noexcept {
     remaining_food_threshold_g = static_cast<uint16_t>(data["remaining_food_threshold_g"]);
     motor_rotation_speed       = static_cast<uint8_t> (data["motor_rotation_speed"]);
 
-    update_device_settings();
+    distribute_changes();
 }
 
 // Function: dump_property
@@ -354,7 +354,7 @@ uint16_t get_load_cell_g() noexcept {
     return avg_weight_g < 0 ? 0 : avg_weight_g;
 }
 
-// FUNCTION_SECTION: SERVO.
+// FUNCTION_SECTION: FOOD DISPENSING.
 
 // Function: dispense_food
 // Description: Handles the food dispensing process (servo control to be added later).
