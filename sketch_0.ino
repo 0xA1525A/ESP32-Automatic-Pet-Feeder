@@ -405,6 +405,9 @@ void delay_with_update(const uint32_t delay_ms) noexcept {
         update_tngr();
         delay(1);
 
+        if (is_emergency_halt_on)
+            handle_emergency_halt();
+
         // Maybe will implement this later.
         // if (is_force_delay_exit) {
         //     is_force_delay_exit = false;
@@ -673,6 +676,12 @@ void dispense_food(const DispenseMode mode) noexcept {
         Serial.printf("Current weight: %d\n", get_load_cell_g());
         set_rgb_led(LEDState::ON, ColourIndex::GREEN);
 
+        // How could I forgot this...
+        if (is_emergency_halt_on) {
+            is_dispensing = false;
+            handle_emergency_halt();
+        }
+
         is_dispensing = true;
         Motor.forward();
 
@@ -721,6 +730,9 @@ void handle_manual_mode_loop() noexcept {
 
     ++ignored_warning_amount;
     update_tngr();
+
+    if (is_emergency_halt_on)
+        handle_emergency_halt();
 
     // Blink orange if manual feed warning is enabled.
     if (manual_feed_warning) {
@@ -829,6 +841,8 @@ void setup_tngr_handler() noexcept {
 // Params: NONE
 // Returns: NONE
 void setup_load_cell() noexcept {
+    digital_write(PIN_LOAD_CELL_5V, HIGH);
+
     LoadCell.begin();
 
     LoadCell.start(LOAD_CELL_STABILISE_TIME_MS);
@@ -844,10 +858,6 @@ void setup() {
     Serial.println("[/] SETTING UP PINS...");
     setup_pin_mode();
 
-    Serial.println("[/] INITIALISING LOAD_CELL...");
-
-    setup_load_cell();
-
     Serial.println("[/] INITIALISING PROGRAM...");
 
     // Quick startup LED sequence.
@@ -855,6 +865,10 @@ void setup() {
     delay_with_update(1000);
     set_rgb_led(LEDState::OFF);
     delay_with_update(100);
+
+    Serial.println("[/] INITIALISING LOAD_CELL...");
+
+    setup_load_cell();
 
     Serial.println("[/] ESTABLISHING WIFI CONNECTION...");
     if (!is_wifi_connected()) {
@@ -871,8 +885,6 @@ void setup() {
     // Blink to indicate success, then idle LED.
     set_rgb_led(LEDState::BLINK, ColourIndex::GREEN, 2, 100, 100);
     set_rgb_led(LEDState::ON, ColourIndex::CYAN);
-
-    digital_write(PIN_LOAD_CELL_5V, HIGH);
 }
 
 void loop() {
