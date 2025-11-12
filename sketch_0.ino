@@ -595,7 +595,7 @@ void distribute_changes() noexcept {
     Motor.set_speed(motor_rotation_speed);
 }
 
-// UTILITY_SECTION: THINGER'S EVENT HANDLERS.// Function: finalise_handler
+// Function: finalise_handler
 // Description: Clear up things/finalise things up before exitting handler's scope.
 // Params: NONE
 // Returns: NONE
