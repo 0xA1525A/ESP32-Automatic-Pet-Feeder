@@ -92,13 +92,13 @@ constexpr uint32_t BOARD_BAUD = 115200;
   NOT USED <-- [OUT 2]   |                                            |
   *I couldn't move the-  |      #[HX711 <- LOAD CELL]                 |
   damn screw >:(         |       [VCC] <------------------------------+
-                         | +---> [DATA]
+                         | +---- [DATA]
              #[RGB LED]  | | +-> [SCK]
  [GPIO 25] -> [R]        | | |   [GND] <-+
  [GPIO 26] -> [G]        | | |           |
  [GPIO 27] -> [B]        | | |           |
               [GND] <----+-=-=-+---------+
- [GPIO 32] ----------------+ | |
+ [GPIO 32] <---------------+ | |
  [GPIO 33] ------------------+ |
  [GND] ------------------------+
 */
@@ -446,7 +446,7 @@ void handle_wifi_disconnected() noexcept {
 // Function: is_data_valid
 // Description: Checks if the data values are valid (non-zero).
 // Params: NONE
-// Returns: (bool) true if any data is invalid, false otherwise.
+// Returns: (bool) true if any data is valid, false otherwise.
 constexpr bool is_data_valid() noexcept {
     return manual_feed_amount_g != 0 && auto_feed_amount_g != 0 && remaining_food_threshold_g != 0;
 }
