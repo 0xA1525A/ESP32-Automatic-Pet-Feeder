@@ -254,10 +254,10 @@ void handle_wifi_disconnected() noexcept;
 void handle_data_invalid()      noexcept;
 
 // Core tngr logic / updates:
-void update_tngr()            noexcept;
-void distribute_changes()     noexcept;
-void update_device_property() noexcept;
-void dump_property()          noexcept;
+void listen_for_tngr_interaction() noexcept;
+void distribute_changes()          noexcept;
+void update_device_property()      noexcept;
+void dump_property()               noexcept;
 
 // void handle_tngr_update_signal()      noexcept; \  
 // void handle_tngr_manual_feed_signal() noexcept;  } Cannot forward declare these guys because the compiler hated it.
@@ -402,7 +402,7 @@ void delay_with_update(const uint32_t delay_ms) noexcept {
 
     // Keeps delaying bit-by-bit until time is reached.
     while (get_timestamp_ms() < DELAY_END_MS) {
-        update_tngr();
+        listen_for_tngr_interaction();
         delay(1);
 
         if (is_emergency_halt_on)
@@ -480,11 +480,11 @@ void handle_data_invalid() noexcept {
 
 // [FUNCTION SECTION - CORE THINGER LOGIC]
 
-// Function: update_tngr
+// Function: listen_for_tngr_interaction
 // Description: Listens for signals come from Thinger.io dashboard.
 // Params: NONE
 // Returns: NONE
-void update_tngr() noexcept {
+void listen_for_tngr_interaction() noexcept {
     const uint32_t CURRENT_TIME_MS = get_timestamp_ms();
 
     // Only call handle function if its 500ms passed.
@@ -685,7 +685,7 @@ void dispense_food(const DispenseMode mode) noexcept {
         is_dispensing = true;
         Motor.forward();
 
-        update_tngr();
+        listen_for_tngr_interaction();
 
         // If the mode is changed, exit immediately.
         if (initial_is_running_automatically != is_running_automatically) {
@@ -724,12 +724,12 @@ void handle_manual_mode_loop() noexcept {
     // Skip if condition not met.
     if (!is_met_dispense_condition()) {
         ignored_warning_amount = 0;
-        update_tngr();
+        listen_for_tngr_interaction();
         return;
     }
 
     ++ignored_warning_amount;
-    update_tngr();
+    listen_for_tngr_interaction();
 
     if (is_emergency_halt_on)
         handle_emergency_halt();
@@ -739,7 +739,7 @@ void handle_manual_mode_loop() noexcept {
         set_rgb_led(LEDState::BLINK, ColourIndex::ORANGE, 2, 100, 100);
         set_rgb_led(LEDState::ON, ColourIndex::ORANGE);
 
-        update_tngr();
+        listen_for_tngr_interaction();
         delay_with_update(5000);
     }
 
@@ -776,7 +776,7 @@ void handle_never_tared() noexcept {
 
         Serial.printf("Weight: %d\n", get_load_cell_g());
 
-        update_tngr();
+        listen_for_tngr_interaction();
     }
 
     finalise_handler();
@@ -793,7 +793,7 @@ void handle_emergency_halt() noexcept {
     int initial_time = get_timestamp_ms();
 
     while (is_emergency_halt_on) {
-        update_tngr();
+        listen_for_tngr_interaction();
         int current_time = get_timestamp_ms();
 
         // blink stays up for 1s,
@@ -900,7 +900,7 @@ void loop() {
     }
 
     // Keep these guys updated.
-    update_tngr();
+    listen_for_tngr_interaction();
     Motor.set_speed(motor_rotation_speed);
     update_load_cell();
 
