@@ -43,6 +43,7 @@
 #include <algorithm>
 #include <cmath>
 
+#include <Arduino.h>
 #include <ThingerESP32.h>
 #include <WiFi.h>
 #include <HX711_ADC.h>
@@ -60,7 +61,7 @@
 #define analog_write  analogWrite
 #define analog_read   analogRead
 #define digital_write digitalWrite
-#define digital_read  dgitalRead
+#define digital_read  digtalRead
 
 // HX711_ADC's:
 #define set_calibration_factor setCalFactor
@@ -68,6 +69,12 @@
 
 // L298N's:
 #define set_speed setSpeed
+
+// STDs':
+#define get_timestamp_ms millis
+
+// Keywords:
+#define nox noexcept
 
 // [CONSTANTS]
 
@@ -99,7 +106,8 @@ constexpr uint32_t BOARD_BAUD = 115200;
  [GPIO 27] -> [B]        | | |           |
               [GND] <----+-=-=-+---------+
  [GPIO 32] <---------------+ | |
- [GPIO 33] ------------------+ |
+ [GPIO 33] ------------------+ | n,</L298N.h>
+
  [GND] ------------------------+
 */
 
@@ -122,7 +130,7 @@ constexpr uint8_t PIN_LOAD_CELL_SCK  = 33;
 // Thinger's constants:
 constexpr char *const TNGR_USERNAME    = "";
 constexpr char *const TNGR_DEVICE_ID   = "";
-constexpr char *const TNGR_DEVICE_CRED = "";
+constexpr char *const TNGR_DEVICE_CRED = "=-";
 
 // WiFi's cconstants:
 constexpr char *const WIFI_SSID     = "";
@@ -212,59 +220,69 @@ bool     is_dispensing              = false;
 uint8_t  ignored_warning_amount     = 0;
 uint16_t tare_amount_since_boot     = 0;
 
+// Time keepers:
+uint32_t timestamp_program_initialised_ms  = 0;
+uint32_t timestamp_current_program_loop_ms = 0;
+uint32_t time_since_last_tngr_update_ms    = 0;
+
+// [FUNCTION FORWARD DECLRATIONS]
+// Some of these guys don't know that themselves exist.
+
+// Low-level hardware / setup:
+void     set_rgb_led(
+             const LEDState,
+             const ColourIndex,
+             const uint8_t,
+             const uint16_t,
+             const uint16_t
+         )                  noexcept;
+void     update_load_cell() noexcept;
+uint16_t get_load_cell_g()  noexcept;
+
+// Device state checks:
+bool is_wifi_connected()              noexcept;
+bool is_data_valid()                  noexcept;
+bool is_met_dispense_condition()      noexcept;
+bool is_device_running_for_too_long() noexcept;
+
+// Delay / timing helpers:
+void delay_with_update(uint32_t) noexcept;
+
+// WiFi / connectivity:
+void connect_to_wifi()          noexcept;
+void handle_wifi_disconnected() noexcept;
+void handle_data_invalid()      noexcept;
+
+// Core tngr logic / updates:
+void update_tngr()            noexcept;
+void distribute_changes()     noexcept;
+void update_device_property() noexcept;
+void dump_property()          noexcept;
+
+// void handle_tngr_update_signal()      noexcept; \  
+// void handle_tngr_manual_feed_signal() noexcept;  } Cannot forward declare these guys because the compiler hated it.
+// void handle_tngr_tare_signal()        noexcept; /  
+void handle_never_tared()             noexcept;
+void finalise_handler()               noexcept;
+
+// Operation loops / dispense:
+void dispense_food(const DispenseMode) noexcept;
+
+void handle_automatic_mode_loop()         noexcept;
+void handle_manual_mode_loop()            noexcept;
+void handle_device_running_for_too_long() noexcept;
+void handle_emergency_halt()              noexcept;
+
+// Setup helpers:
+void setup_pin_mode()     noexcept;
+void setup_load_cell()    noexcept;
+void setup_tngr_handler() noexcept;
+
 // [FUNCTIONS]
 // Neither do I know what these are.
 // I wrote these all by myself - but I can't explain a line of it.
 
-// Function: distribute_changes
-// Description: Apply changes to device configuration after update.
-// Params: NONE
-// Returns: NONE
-void distribute_changes() noexcept {
-    // IDK what to do. have a nice day.
-    Motor.set_speed(motor_rotation_speed);
-}
-
-// FUNCTION_SECTION: DEVICE PROPERTY.
-
-// Function: update_device_property
-// Description: Updates local variables with values from the device's general property data.
-// Params: NONE
-// Returns: NONE
-void update_device_property() noexcept {
-    // Get the latest property data from Thinger.io.
-    Thing.get_property("general_property", data);
-
-    // Update local variables with the received values.
-    is_running_automatically   = static_cast<bool>    (data["is_running_automatically"]);
-    is_emergency_halt_on       = static_cast<bool>    (data["is_emergency_halt_on"]);
-    allow_neglect_bypass       = static_cast<bool>    (data["allow_neglect_bypass"]);
-    auto_feed_amount_g         = static_cast<uint16_t>(data["auto_feed_amount_g"]);
-    manual_feed_amount_g       = static_cast<uint16_t>(data["manual_feed_amount_g"]);
-    manual_feed_warning        = static_cast<bool>    (data["manual_feed_warning"]);
-    remaining_food_threshold_g = static_cast<uint16_t>(data["remaining_food_threshold_g"]);
-    motor_rotation_speed       = static_cast<uint8_t> (data["motor_rotation_speed"]);
-
-    distribute_changes();
-}
-
-// Function: dump_property
-// Description: Prin`ts the current property values to the serial monitor.
-// Params: NONE
-// Returns: NONE
-void dump_property() noexcept {
-    Serial.println("[!] NEW PROPERTY VALUES:");
-    Serial.printf("    IS RUNNING AUTOMATICALLY: %s\n", is_running_automatically ? "YES" : "NO");
-    Serial.printf("    IS EMERGENCY HALT ON    : %s\n", is_emergency_halt_on     ? "YES" : "NO");
-    Serial.printf("    ALLOW BYPASS ON NEGLECT : %s\n", allow_neglect_bypass     ? "YES" : "NO");
-    Serial.printf("    AUTO FEED AMOUNT(G)     : %u\n", auto_feed_amount_g);
-    Serial.printf("    MANUAL FEED AMOUNT(G)   : %u\n", manual_feed_amount_g);
-    Serial.printf("    MANUAL FEED WARNING     : %s\n", manual_feed_warning      ? "ENABLED" : "DISABLED");
-    Serial.printf("    REMAINING THRESHOLD(G)  : %u\n", remaining_food_threshold_g);
-    Serial.printf("    MOTOR ROTATION SPEED    : %d\n", motor_rotation_speed);
-}
-
-// FUNCTION_SECTION: RGB LED.
+// [FUNCTION SECTION - HARDWARE CONTROLLERS]
 
 // Function: set_rgb_led
 // Description: Sets or handles the state of the RGB LED.
@@ -280,7 +298,7 @@ void dump_property() noexcept {
 //     (uint16_t) blink_down_duration_ms
 //         How long the LED stays OFF between blinks.
 // Returns: NONE
-constexpr void set_rgb_led(
+void set_rgb_led(
     const LEDState    state,
     const ColourIndex colour                 = ColourIndex::WHITE,
     const uint8_t     repeat_amount          = 0,
@@ -306,21 +324,19 @@ constexpr void set_rgb_led(
 
     // Turn off LED before starting blink sequence.
     set_rgb_led(LEDState::OFF);
-    delay(blink_down_duration_ms);
+    delay_with_update(blink_down_duration_ms);
 
     // Blink loop
     for (uint8_t blinked = 0; blinked < repeat_amount; ++blinked) {
         set_rgb_led(LEDState::ON, colour);
-        delay(blink_up_duration_ms);
+        delay_with_update(blink_up_duration_ms);
         set_rgb_led(LEDState::OFF);
-        delay(blink_down_duration_ms);
+        delay_with_update(blink_down_duration_ms);
     }
 
     // Leave LED off after blinking.
     set_rgb_led(LEDState::OFF);
 }
-
-// FUNCTION_SECTION: LOAD CELL.
 
 // Function: update_load_cell
 // Description: Don't question me, please.
@@ -354,59 +370,50 @@ uint16_t get_load_cell_g() noexcept {
     return avg_weight_g < 0 ? 0 : avg_weight_g;
 }
 
-// FUNCTION_SECTION: FOOD DISPENSING.
+// [FUNCTION SECTION - DEVICE STATE CHECKERS]
 
-// Function: dispense_food
-// Description: Handles the food dispensing process (servo control to be added later).
-// Params:
-//     (DispenseMode) mode
-//         How should this function behave.
-// Returns: NONE
-void dispense_food(const DispenseMode mode) noexcept {
-    if (is_emergency_halt_on)
-        return;
-
-    set_rgb_led(LEDState::ON, ColourIndex::GREEN);
-
-    const bool initial_is_running_automatically = is_running_automatically;
-    const uint16_t before_weight_g = get_load_cell_g();
-    const uint16_t target_choices[2] = {
-        /*AUTOMATIC*/ std::clamp(auto_feed_amount_g - before_weight_g, 0, static_cast<int>(auto_feed_amount_g)),
-        /*MANUAL*/    manual_feed_amount_g
-    };
-
-    const uint16_t target_weight_g = target_choices[static_cast<uint8_t>(mode)];
-
-    if (mode == DispenseMode::AUTOMATIC && target_weight_g == 0)
-        return;
-
-    // Keep dispensing until I love you.
-    while (get_load_cell_g() < target_weight_g) {
-        set_rgb_led(LEDState::ON, ColourIndex::GREEN);
-
-        is_dispensing = true;
-        Motor.forward();
-
-        Thing.handle();
-
-        // If the mode is changed, exit immediately.
-        if (initial_is_running_automatically != is_running_automatically) {
-            Motor.stop();
-            is_dispensing = false;
-
-            return;
-        }
-    }
-
-    Motor.stop();
-    is_dispensing = false;
-
-    set_rgb_led(LEDState::BLINK, ColourIndex::GREEN, 2, 100, 100);
+// Function: is_met_dispense_condition
+// Description: Checks if the remaining food meets the dispensing condition.
+// Params: NONE
+// Returns: (bool) true if remaining food is above or equal to the threshold, false otherwise.
+bool is_met_dispense_condition() noexcept {
+    return get_load_cell_g() < remaining_food_threshold_g;
 }
 
-// [UTILITIES AND HANDLERS]
+// Function: is_device_running_for_too_long
+// Description: Checks if the device is running for too long.
+// Params: NONE
+// Returns: (bool) true if the device is indeed running for too long, false otherwise.
+bool is_device_running_for_too_long() noexcept {
+    // 30 days uptime limit in ms;
+    constexpr uint32_t UPTIME_LIMIT_MS = 30UL * 24UL * 60UL * 60UL * 1000UL;
 
-// UTILITY_SECTION: WIFI CONNECTION.
+    return get_timestamp_ms() > UPTIME_LIMIT_MS;
+}
+
+// [FUNCTION SECTION - TIMING HELPERS]
+
+// Function: delay_with_update
+// Description: Replaces the built-in delay function because it makes my thinger.io dashbaord feels unresponsive.
+// Params: NONE
+// Returns: NONE
+void delay_with_update(const uint32_t delay_ms) noexcept {
+    const uint32_t DELAY_END_MS = get_timestamp_ms() + delay_ms;
+
+    // Keeps delaying bit-by-bit until time is reached.
+    while (get_timestamp_ms() < DELAY_END_MS) {
+        update_tngr();
+        delay(1);
+
+        // Maybe will implement this later.
+        // if (is_force_delay_exit) {
+        //     is_force_delay_exit = false;
+        //     break;
+        // }
+    }
+}
+
+// [FUNCTION SECTION - WIFI / NETWORK CONNECTIVITY]
 
 // Function: is_wifi_connected
 // Description: Checks if the device is connected to WiFi.
@@ -434,20 +441,20 @@ void handle_wifi_disconnected() noexcept {
         set_rgb_led(LEDState::ON, ColourIndex::YELLOW);
 
         connect_to_wifi();
-        delay(3000);
+        delay_with_update(3000);
 
         // Blink to indicate reconnection attempt.
         set_rgb_led(LEDState::BLINK, ColourIndex::YELLOW, 2, 100, 100);
     }
 }
 
-// UTILITY_SECTION: DATA VALIDATION.
+// [FUNCTION SECTION - DATA VALIDITY]
 
 // Function: is_data_valid
 // Description: Checks if the data values are valid (non-zero).
 // Params: NONE
 // Returns: (bool) true if any data is valid, false otherwise.
-constexpr bool is_data_valid() noexcept {
+bool is_data_valid() noexcept {
     return manual_feed_amount_g != 0 && auto_feed_amount_g != 0 && remaining_food_threshold_g != 0;
 }
 
@@ -460,7 +467,7 @@ void handle_data_invalid() noexcept {
         set_rgb_led(LEDState::ON, ColourIndex::CYAN);
 
         update_device_property();
-        delay(3000);
+        delay_with_update(3000);
 
         // Blink to indicate update attempt.
         set_rgb_led(LEDState::BLINK, ColourIndex::CYAN, 2, 100, 100);
@@ -468,60 +475,22 @@ void handle_data_invalid() noexcept {
     }
 }
 
-// UTILITY_SECTION: FOOD DISPENSING.
+// [FUNCTION SECTION - CORE THINGER LOGIC]
 
-// Function: is_met_dispense_condition
-// Description: Checks if the remaining food meets the dispensing condition.
-// Params: NONE
-// Returns: (bool) true if remaining food is above or equal to the threshold, false otherwise.
-constexpr bool is_met_dispense_condition() noexcept {
-    return get_load_cell_g() < remaining_food_threshold_g;
-}
-
-// UTILITY_SECTION: THINGER'S EVENT HANDLERS.
-
-// Function: finalise_handler
-// Description: Clear up things/finalise things up before exitting handler's scope.
+// Function: update_tngr
+// Description: Listens for signals come from Thinger.io dashboard.
 // Params: NONE
 // Returns: NONE
-void finalise_handler() noexcept {
-    // :D
-    set_rgb_led(LEDState::ON, is_running_automatically ? ColourIndex::WHITE : ColourIndex::ORANGE);
-}
+void update_tngr() noexcept {
+    const uint32_t CURRENT_TIME_MS = get_timestamp_ms();
 
-// Function: handle_emergency_halt
-// Description: Handles emergency halt state with a red blinking LED.
-// Params: NONE
-// Returns: NONE
-void handle_emergency_halt() noexcept {
-    // Making sure the motor is halted.
-    Motor.stop();
+    // Only call handle function if its 500ms passed.
+    if (CURRENT_TIME_MS - time_since_last_tngr_update_ms > 500 || time_since_last_tngr_update_ms == 0) {
+        Thing.handle();
 
-    int initial_time = millis();
-    int last_update_time = initial_time;
-
-    while (is_emergency_halt_on) {
-        int current_time = millis();
-
-        // handle thing every 500ms.
-        if ((current_time - last_update_time) > 500) {
-            last_update_time = current_time;
-
-            Thing.handle();
-        }
-
-        // blink stays up for 1s,
-        // then down for 500ms.
-        if (current_time - initial_time < 1000)
-            set_rgb_led(LEDState::ON, ColourIndex::RED);
-        else if (current_time - initial_time < 1500)
-            set_rgb_led(LEDState::OFF);
-        else
-            initial_time = current_time;
+        time_since_last_tngr_update_ms = CURRENT_TIME_MS;
     }
 }
-
-// UTILITY_SECTION: THINGER'S API SIGNAL.
 
 // Function: handle_tngr_update_signal
 // Description: Handles the update signal from Thinger.io and refreshes device properties.
@@ -538,7 +507,7 @@ void handle_tngr_update_signal(pson &in) noexcept {
 
     // Blink for signal
     set_rgb_led(LEDState::OFF);
-    delay(100);
+    delay_with_update(100);
     set_rgb_led(LEDState::ON, ColourIndex::CYAN);
 
     Serial.println("[!] NEW UPDATE SIGNAL RECEIVED");
@@ -554,7 +523,7 @@ void handle_tngr_update_signal(pson &in) noexcept {
     if (is_emergency_halt_on)
         handle_emergency_halt();
 
-    delay(500);
+    delay_with_update(500);
 
     finalise_handler();
 }
@@ -596,68 +565,133 @@ void handle_tngr_tare_signal(pson &in) noexcept {
 
     // Warns user to clear everything off and place blank plate/dish on the load cell.
     set_rgb_led(LEDState::ON, ColourIndex::RED);
-    delay(10000);
+    delay_with_update(10000);
     set_rgb_led(LEDState::BLINK, ColourIndex::RED, 2, 100, 100);
 
     Serial.println("[/] CALIBRATING...");
     Serial.println("[!] PLEASE DO NOT TOUCH/MOVE ANYTHING ON THE LOAD CELL.");
 
     set_rgb_led(LEDState::ON, ColourIndex::YELLOW);
-    delay(1000);
+    delay_with_update(1000);
 
     LoadCell.tare();
     tare_amount_since_boot += 1;
     set_rgb_led(LEDState::BLINK, ColourIndex::YELLOW, 2, 100, 100);
 
     set_rgb_led(LEDState::ON, ColourIndex::GREEN);
-    delay(1000);
+    delay_with_update(1000);
 
     set_rgb_led(LEDState::BLINK, ColourIndex::GREEN, 2, 100, 100);
 
     finalise_handler();
 }
 
-// UTILITY_SECTION: PROGRAM SETUP.
-
-// Function: setup_pin_mode
-// Description: Sets all required pin modes for the RGB LED.
+// Function: distribute_changes
+// Description: Apply changes to device configuration after update.
 // Params: NONE
 // Returns: NONE
-void setup_pin_mode() noexcept {
-    pin_mode(PIN_RGBLED_R, OUTPUT);
-    pin_mode(PIN_RGBLED_G, OUTPUT);
-    pin_mode(PIN_RGBLED_B, OUTPUT);
-
-    pin_mode(PIN_RELAY_L298N_1, OUTPUT);
-    pin_mode(PIN_RELAY_L298N_2, OUTPUT);
-    pin_mode(PIN_RELAY_L298N_ENA, OUTPUT);
-    pin_mode(PIN_LOAD_CELL_5V, OUTPUT);
-    pin_mode(PIN_LOAD_CELL_SCK, OUTPUT);
-    pin_mode(PIN_LOAD_CELL_DATA, INPUT);
+void distribute_changes() noexcept {
+    // IDK what to do. have a nice day.
+    Motor.set_speed(motor_rotation_speed);
 }
 
-// Function: setup_tngr_handler
-// Description: Registers all Thinger.io property handlers.
+// UTILITY_SECTION: THINGER'S EVENT HANDLERS.// Function: finalise_handler
+// Description: Clear up things/finalise things up before exitting handler's scope.
 // Params: NONE
 // Returns: NONE
-void setup_tngr_handler() noexcept {
-    Thing["update_signal"] << handle_tngr_update_signal;
-    Thing["manual_feed"]   << handle_tngr_manual_feed_signal;
-    Thing["tare_signal"]   << handle_tngr_tare_signal;
+void finalise_handler() noexcept {
+    // :D
+    set_rgb_led(LEDState::ON, is_running_automatically ? ColourIndex::WHITE : ColourIndex::ORANGE);
 }
 
-// Function: setup_load_cell
-// Description: Preparing load cell for later usage.
+// Function: update_device_property
+// Description: Updates local variables with values from the device's general property data.
 // Params: NONE
 // Returns: NONE
-void setup_load_cell() noexcept {
-    LoadCell.begin();
+void update_device_property() noexcept {
+    // Get the latest property data from Thinger.io.
+    Thing.get_property("general_property", data);
 
-    LoadCell.start(LOAD_CELL_STABILISE_TIME_MS);
-    LoadCell.set_calibration_factor(LOAD_CELL_CALIBRATION_FACTOR);
+    // Update local variables with the received values.
+    is_running_automatically   = static_cast<bool>    (data["is_running_automatically"]);
+    is_emergency_halt_on       = static_cast<bool>    (data["is_emergency_halt_on"]);
+    allow_neglect_bypass       = static_cast<bool>    (data["allow_neglect_bypass"]);
+    auto_feed_amount_g         = static_cast<uint16_t>(data["auto_feed_amount_g"]);
+    manual_feed_amount_g       = static_cast<uint16_t>(data["manual_feed_amount_g"]);
+    manual_feed_warning        = static_cast<bool>    (data["manual_feed_warning"]);
+    remaining_food_threshold_g = static_cast<uint16_t>(data["remaining_food_threshold_g"]);
+    motor_rotation_speed       = static_cast<uint8_t> (data["motor_rotation_speed"]);
+
+    distribute_changes();
 }
 
-// UTILITY_SECTION: PROGRAM LOOP.
+// Function: dump_property
+// Description: Prin`ts the current property values to the serial monitor.
+// Params: NONE
+// Returns: NONE
+void dump_property() noexcept {
+    Serial.println("[!] NEW PROPERTY VALUES:");
+    Serial.printf("    IS RUNNING AUTOMATICALLY: %s\n", is_running_automatically ? "YES" : "NO");
+    Serial.printf("    IS EMERGENCY HALT ON    : %s\n", is_emergency_halt_on     ? "YES" : "NO");
+    Serial.printf("    ALLOW BYPASS ON NEGLECT : %s\n", allow_neglect_bypass     ? "YES" : "NO");
+    Serial.printf("    AUTO FEED AMOUNT(G)     : %u\n", auto_feed_amount_g);
+    Serial.printf("    MANUAL FEED AMOUNT(G)   : %u\n", manual_feed_amount_g);
+    Serial.printf("    MANUAL FEED WARNING     : %s\n", manual_feed_warning      ? "ENABLED" : "DISABLED");
+    Serial.printf("    REMAINING THRESHOLD(G)  : %u\n", remaining_food_threshold_g);
+    Serial.printf("    MOTOR ROTATION SPEED    : %d\n", motor_rotation_speed);
+}
+
+// [FUNCTION SECTION - OPERATION LOOPS / DISPENSE]
+
+// Function: dispense_food
+// Description: Handles the food dispensing process (servo control to be added later).
+// Params:
+//     (DispenseMode) mode
+//         How should this function behave.
+// Returns: NONE
+void dispense_food(const DispenseMode mode) noexcept {
+    if (is_emergency_halt_on)
+        return;
+
+    set_rgb_led(LEDState::ON, ColourIndex::GREEN);
+    Serial.printf("Current weight: %d\n", get_load_cell_g());
+
+    const bool initial_is_running_automatically = is_running_automatically;
+    const uint16_t before_weight_g = get_load_cell_g();
+    const uint16_t target_choices[2] = {
+        /*AUTOMATIC*/ std::clamp(auto_feed_amount_g - before_weight_g, 0, static_cast<int>(auto_feed_amount_g)),
+        /*MANUAL*/    manual_feed_amount_g
+    };
+
+    const uint16_t target_weight_g = target_choices[static_cast<uint8_t>(mode)];
+
+    if (mode == DispenseMode::AUTOMATIC && target_weight_g == 0)
+        return;
+
+    // Keep dispensing until I love you.
+    while (get_load_cell_g() < target_weight_g) {
+        Serial.printf("Current weight: %d\n", get_load_cell_g());
+        set_rgb_led(LEDState::ON, ColourIndex::GREEN);
+
+        is_dispensing = true;
+        Motor.forward();
+
+        update_tngr();
+
+        // If the mode is changed, exit immediately.
+        if (initial_is_running_automatically != is_running_automatically) {
+            Motor.stop();
+            is_dispensing = false;
+
+            return;
+        }
+    }
+
+    Motor.stop();
+    is_dispensing = false;
+
+    set_rgb_led(LEDState::BLINK, ColourIndex::GREEN, 2, 100, 100);
+}
 
 // Function: handle_automatic_mode_loop
 // Description: Handles automatic feeding when the condition is met.
@@ -681,18 +715,20 @@ void handle_manual_mode_loop() noexcept {
     // Skip if condition not met.
     if (!is_met_dispense_condition()) {
         ignored_warning_amount = 0;
+        update_tngr();
         return;
     }
 
     ++ignored_warning_amount;
+    update_tngr();
 
     // Blink orange if manual feed warning is enabled.
     if (manual_feed_warning) {
         set_rgb_led(LEDState::BLINK, ColourIndex::ORANGE, 2, 100, 100);
         set_rgb_led(LEDState::ON, ColourIndex::ORANGE);
 
-        Thing.handle();
-        delay(5000);
+        update_tngr();
+        delay_with_update(5000);
     }
 
     // Auto bypass feed if ignored too many warnings and bypass is allowed.
@@ -702,6 +738,18 @@ void handle_manual_mode_loop() noexcept {
     }
 
     finalise_handler();
+}
+
+// Function: handle_device_running_for_too_long
+// Description: Prevents get_timestamp_ms() to go nuts because of integer overflow.
+// Params: NONE
+// Returns: NONE
+void handle_device_running_for_too_long() noexcept {
+    set_rgb_led(LEDState::ON, ColourIndex::RED);
+    delay_with_update(10000);
+
+    // Restart the board.
+    ESP.restart();
 }
 
 // Function: handle_never_tared
@@ -716,10 +764,75 @@ void handle_never_tared() noexcept {
 
         Serial.printf("Weight: %d\n", get_load_cell_g());
 
-        Thing.handle();
+        update_tngr();
     }
 
     finalise_handler();
+}
+
+// Function: handle_emergency_halt
+// Description: Handles emergency halt state with a red blinking LED.
+// Params: NONE
+// Returns: NONE
+void handle_emergency_halt() noexcept {
+    // Making sure the motor is halted.
+    Motor.stop();
+
+    int initial_time = get_timestamp_ms();
+
+    while (is_emergency_halt_on) {
+        update_tngr();
+        int current_time = get_timestamp_ms();
+
+        // blink stays up for 1s,
+        // then down for 500ms.
+        if (current_time - initial_time < 1000)
+            set_rgb_led(LEDState::ON, ColourIndex::RED);
+        else if (current_time - initial_time < 1500)
+            set_rgb_led(LEDState::OFF);
+        else
+            initial_time = current_time;
+    }
+}
+
+// [FUNCTION SECTION - SETUP HELPERS]
+
+// Function: setup_pin_mode
+// Description: Sets all required pin modes for the RGB LED.
+// Params: NONE
+// Returns: NONE
+void setup_pin_mode() noexcept {
+    pin_mode(PIN_RGBLED_R, OUTPUT);
+    pin_mode(PIN_RGBLED_G, OUTPUT);
+    pin_mode(PIN_RGBLED_B, OUTPUT);
+
+    pin_mode(PIN_RELAY_L298N_1, OUTPUT);
+    pin_mode(PIN_RELAY_L298N_2, OUTPUT);
+    pin_mode(PIN_RELAY_L298N_ENA, OUTPUT);
+    pin_mode(PIN_LOAD_CELL_5V, OUTPUT);
+    pin_mode(PIN_LOAD_CELL_SCK, OUTPUT);
+    pin_mode(PIN_LOAD_CELL_DATA, INPUT);
+}
+
+// Function: setup_tngr_handler
+// Description: Registers all Thinger.io property handlers.
+// Params: NONE
+// Returns: NONE
+void setup_tngr_handler() noexcept {
+    Thing["update_signal"] << &handle_tngr_update_signal;
+    Thing["manual_feed"]   << &handle_tngr_manual_feed_signal;
+    Thing["tare_signal"]   << &handle_tngr_tare_signal;
+}
+
+// Function: setup_load_cell
+// Description: Preparing load cell for later usage.
+// Params: NONE
+// Returns: NONE
+void setup_load_cell() noexcept {
+    LoadCell.begin();
+
+    LoadCell.start(LOAD_CELL_STABILISE_TIME_MS);
+    LoadCell.set_calibration_factor(LOAD_CELL_CALIBRATION_FACTOR);
 }
 
 // [MAIN AREA - KEEP OUT!!]
@@ -739,9 +852,9 @@ void setup() {
 
     // Quick startup LED sequence.
     set_rgb_led(LEDState::ON, ColourIndex::RED);
-    delay(1000);
+    delay_with_update(1000);
     set_rgb_led(LEDState::OFF);
-    delay(100);
+    delay_with_update(100);
 
     Serial.println("[/] ESTABLISHING WIFI CONNECTION...");
     if (!is_wifi_connected()) {
@@ -763,6 +876,11 @@ void setup() {
 }
 
 void loop() {
+    if (timestamp_program_initialised_ms == 0)
+        timestamp_program_initialised_ms = get_timestamp_ms();
+
+    timestamp_current_program_loop_ms = get_timestamp_ms();
+
     // Reconnect if Wi-Fi drops.
     if (!is_wifi_connected()) {
         handle_wifi_disconnected();
@@ -770,9 +888,11 @@ void loop() {
     }
 
     // Keep these guys updated.
-    Thing.handle();
+    update_tngr();
     Motor.set_speed(motor_rotation_speed);
     update_load_cell();
+
+    Serial.printf("Current weight: %d\n", get_load_cell_g());
 
     if (tare_amount_since_boot == 0) {
         handle_never_tared();
@@ -789,6 +909,10 @@ void loop() {
     if (is_emergency_halt_on) {
         handle_emergency_halt();
         return;
+    }
+
+    if (is_device_running_for_too_long) {
+        handle_device_running_for_too_long();
     }
 
     // Run active mode loop.
