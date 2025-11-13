@@ -130,7 +130,7 @@ constexpr uint8_t PIN_LOAD_CELL_SCK  = 33;
 // Thinger's constants:
 constexpr char *const TNGR_USERNAME    = "";
 constexpr char *const TNGR_DEVICE_ID   = "";
-constexpr char *const TNGR_DEVICE_CRED = "=-";
+constexpr char *const TNGR_DEVICE_CRED = "";
 
 // WiFi's cconstants:
 constexpr char *const WIFI_SSID     = "";
@@ -575,9 +575,17 @@ void handle_tngr_tare_signal(pson &in) noexcept {
     Serial.println("[!] PLEASE DO NOT TOUCH/MOVE ANYTHING ON THE LOAD CELL.");
 
     set_rgb_led(LEDState::ON, ColourIndex::YELLOW);
+    LoadCell.tare();
     delay_with_update(1000);
 
-    LoadCell.tare();
+    // Update it because idk why it keeps reading ghost value.
+    for (uint8_t _ = 0; i < 100; ++i)
+        LoadCell.update();
+
+    // If the weight is still off, tare again.
+    if (get_load_cell_g() > 5)
+        LoadCell.tare();
+
     tare_amount_since_boot += 1;
     set_rgb_led(LEDState::BLINK, ColourIndex::YELLOW, 2, 100, 100);
 
