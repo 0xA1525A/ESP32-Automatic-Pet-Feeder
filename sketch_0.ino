@@ -579,7 +579,7 @@ void handle_tngr_tare_signal(pson &in) noexcept {
     delay_with_update(1000);
 
     // Update it because idk why it keeps reading ghost value.
-    for (uint8_t _ = 0; i < 100; ++i)
+    for (uint8_t _ = 0; _ < 100; ++_)
         LoadCell.update();
 
     // If the weight is still off, tare again.
