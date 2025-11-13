@@ -73,9 +73,6 @@
 // STDs':
 #define get_timestamp_ms millis
 
-// Keywords:
-#define nox noexcept
-
 // [CONSTANTS]
 
 // Here are some hard-coded values.
@@ -217,13 +214,14 @@ uint8_t  motor_rotation_speed       = 0;
 
 // Current device's physically readable/trackable variables:
 bool     is_dispensing              = false;
+bool     is_taring                  = false;
 uint8_t  ignored_warning_amount     = 0;
 uint16_t tare_amount_since_boot     = 0;
 
 // Time keepers:
-uint32_t timestamp_program_initialised_ms  = 0;
-uint32_t timestamp_current_program_loop_ms = 0;
-uint32_t time_since_last_tngr_update_ms    = 0;
+uint64_t timestamp_program_initialised_ms  = 0;
+uint64_t timestamp_current_program_loop_ms = 0;
+uint64_t time_since_last_tngr_update_ms    = 0;
 
 // [FUNCTION FORWARD DECLRATIONS]
 // Some of these guys don't know that themselves exist.
@@ -308,7 +306,7 @@ void set_rgb_led(
     // Get the RGB value for the given colour index.
     const uint8_t *COLOUR_RGB = COLIDX_RGB_VMAP[static_cast<uint8_t>(colour)];
 
-    Serial.printf("RGB Signal: %s (%d)\n", state == LEDState::OFF ? "OFF" : state == LEDState::ON ? "ON" : "BLINK", state == LEDState::OFF ? -1 : static_cast<uint8_t>(colour));
+    // Serial.printf("RGB Signal: %s (%d)\n", state == LEDState::OFF ? "OFF" : state == LEDState::ON ? "ON" : "BLINK", state == LEDState::OFF ? -1 : static_cast<uint8_t>(colour));
 
     // If state is ON/OFF only, or blinking parameters are not set.
     if (static_cast<uint8_t>(state) <= 1 || (static_cast<uint16_t>(repeat_amount) | blink_up_duration_ms | blink_down_duration_ms) == static_cast<uint16_t>(0)) {
@@ -324,14 +322,14 @@ void set_rgb_led(
 
     // Turn off LED before starting blink sequence.
     set_rgb_led(LEDState::OFF);
-    delay_with_update(blink_down_duration_ms);
+    delay(blink_down_duration_ms);
 
     // Blink loop
     for (uint8_t blinked = 0; blinked < repeat_amount; ++blinked) {
         set_rgb_led(LEDState::ON, colour);
-        delay_with_update(blink_up_duration_ms);
+        delay(blink_up_duration_ms);
         set_rgb_led(LEDState::OFF);
-        delay_with_update(blink_down_duration_ms);
+        delay(blink_down_duration_ms);
     }
 
     // Leave LED off after blinking.
@@ -407,12 +405,6 @@ void delay_with_update(const uint32_t delay_ms) noexcept {
 
         if (is_emergency_halt_on)
             handle_emergency_halt();
-
-        // Maybe will implement this later.
-        // if (is_force_delay_exit) {
-        //     is_force_delay_exit = false;
-        //     break;
-        // }
     }
 }
 
@@ -444,7 +436,7 @@ void handle_wifi_disconnected() noexcept {
         set_rgb_led(LEDState::ON, ColourIndex::YELLOW);
 
         connect_to_wifi();
-        delay_with_update(3000);
+        delay(3000);
 
         // Blink to indicate reconnection attempt.
         set_rgb_led(LEDState::BLINK, ColourIndex::YELLOW, 2, 100, 100);
@@ -470,7 +462,7 @@ void handle_data_invalid() noexcept {
         set_rgb_led(LEDState::ON, ColourIndex::CYAN);
 
         update_device_property();
-        delay_with_update(3000);
+        delay(3000);
 
         // Blink to indicate update attempt.
         set_rgb_led(LEDState::BLINK, ColourIndex::CYAN, 2, 100, 100);
@@ -485,13 +477,15 @@ void handle_data_invalid() noexcept {
 // Params: NONE
 // Returns: NONE
 void listen_for_tngr_interaction() noexcept {
-    const uint32_t CURRENT_TIME_MS = get_timestamp_ms();
-
+    const uint64_t CURRENT_TIME_MS = get_timestamp_ms();
+    
     // Only call handle function if its 500ms passed.
-    if (CURRENT_TIME_MS - time_since_last_tngr_update_ms > 500 || time_since_last_tngr_update_ms == 0) {
+    if (CURRENT_TIME_MS - time_since_last_tngr_update_ms > 250 || time_since_last_tngr_update_ms == 0) {
+        Serial.println("[!] LISTENING TO THINGER.IO");
         Thing.handle();
 
         time_since_last_tngr_update_ms = CURRENT_TIME_MS;
+        return;
     }
 }
 
@@ -506,11 +500,14 @@ void handle_tngr_update_signal(pson &in) noexcept {
     if (!static_cast<bool>(in))
         return;
 
+    // temporarily update the variable.
+    is_emergency_halt_on = false;
+
     Motor.stop();
 
     // Blink for signal
     set_rgb_led(LEDState::OFF);
-    delay_with_update(100);
+    delay(100);
     set_rgb_led(LEDState::ON, ColourIndex::CYAN);
 
     Serial.println("[!] NEW UPDATE SIGNAL RECEIVED");
@@ -523,10 +520,7 @@ void handle_tngr_update_signal(pson &in) noexcept {
     // Print all the current, new value onto the serial monitor.
     dump_property();
 
-    if (is_emergency_halt_on)
-        handle_emergency_halt();
-
-    delay_with_update(500);
+    delay(500);
 
     finalise_handler();
 }
@@ -559,42 +553,47 @@ void handle_tngr_manual_feed_signal(pson &in) noexcept {
 // Returns: NONE
 void handle_tngr_tare_signal(pson &in) noexcept {
     // Ignore if button is released or emergency halt is active.
-    if (!static_cast<bool>(in) || is_emergency_halt_on)
+    if (!static_cast<bool>(in) || is_emergency_halt_on || is_taring)
         return;
 
+    is_taring = true;
     Motor.stop();
     Serial.println("[!] TARE SIGNAL RECEIVED");
     Serial.println("[!] PLEASE REMOVE ALL WEIGHT AND LEAVE AN EMPTY PLATE ON THE LOAD CELL.");
 
     // Warns user to clear everything off and place blank plate/dish on the load cell.
     set_rgb_led(LEDState::ON, ColourIndex::RED);
-    delay_with_update(10000);
+    delay(10000);
     set_rgb_led(LEDState::BLINK, ColourIndex::RED, 2, 100, 100);
 
     Serial.println("[/] CALIBRATING...");
     Serial.println("[!] PLEASE DO NOT TOUCH/MOVE ANYTHING ON THE LOAD CELL.");
 
     set_rgb_led(LEDState::ON, ColourIndex::YELLOW);
-    LoadCell.tare();
-    delay_with_update(1000);
 
-    // Update it because idk why it keeps reading ghost value.
-    for (uint8_t _ = 0; _ < 100; ++_)
-        LoadCell.update();
-
-    // If the weight is still off, tare again.
-    if (get_load_cell_g() > 5)
+    // Tare until the load cell reading is 0.
+    while (true) {
+        update_load_cell();
         LoadCell.tare();
+
+        delay(3000);
+
+        if (get_load_cell_g() == 0)
+            break;
+    }
 
     tare_amount_since_boot += 1;
     set_rgb_led(LEDState::BLINK, ColourIndex::YELLOW, 2, 100, 100);
 
     set_rgb_led(LEDState::ON, ColourIndex::GREEN);
-    delay_with_update(1000);
+    delay(1000);
 
     set_rgb_led(LEDState::BLINK, ColourIndex::GREEN, 2, 100, 100);
 
     finalise_handler();
+
+    is_taring = false;
+    Serial.println("[!] TARE COMPLETED!");
 }
 
 // Function: distribute_changes
@@ -784,6 +783,7 @@ void handle_never_tared() noexcept {
 
         Serial.printf("Weight: %d\n", get_load_cell_g());
 
+        // Do nothing until tared.
         listen_for_tngr_interaction();
     }
 
@@ -796,13 +796,20 @@ void handle_never_tared() noexcept {
 // Returns: NONE
 void handle_emergency_halt() noexcept {
     // Making sure the motor is halted.
+    if (!is_emergency_halt_on)
+        return;
+
     Motor.stop();
 
-    int initial_time = get_timestamp_ms();
+    uint64_t initial_time = get_timestamp_ms();
 
     while (is_emergency_halt_on) {
+        uint64_t current_time = get_timestamp_ms();
+
         listen_for_tngr_interaction();
-        int current_time = get_timestamp_ms();
+
+        if (!is_emergency_halt_on)
+            break;
 
         // blink stays up for 1s,
         // then down for 500ms.
@@ -810,8 +817,10 @@ void handle_emergency_halt() noexcept {
             set_rgb_led(LEDState::ON, ColourIndex::RED);
         else if (current_time - initial_time < 1500)
             set_rgb_led(LEDState::OFF);
-        else
+        else {
+            delay_with_update(500);
             initial_time = current_time;
+        }
     }
 }
 
@@ -839,9 +848,9 @@ void setup_pin_mode() noexcept {
 // Params: NONE
 // Returns: NONE
 void setup_tngr_handler() noexcept {
-    Thing["update_signal"] << &handle_tngr_update_signal;
-    Thing["manual_feed"]   << &handle_tngr_manual_feed_signal;
-    Thing["tare_signal"]   << &handle_tngr_tare_signal;
+    Thing["update_signal"] << handle_tngr_update_signal;
+    Thing["manual_feed"]   << handle_tngr_manual_feed_signal;
+    Thing["tare_signal"]   << handle_tngr_tare_signal;
 }
 
 // Function: setup_load_cell
@@ -870,9 +879,9 @@ void setup() {
 
     // Quick startup LED sequence.
     set_rgb_led(LEDState::ON, ColourIndex::RED);
-    delay_with_update(1000);
+    delay(1000);
     set_rgb_led(LEDState::OFF);
-    delay_with_update(100);
+    delay(100);
 
     Serial.println("[/] INITIALISING LOAD_CELL...");
 
@@ -922,16 +931,19 @@ void loop() {
     // Ensure required data is valid before continuing.
     if (!is_data_valid()) {
         handle_data_invalid();
+
+        Serial.println("[!] DATA VALIDATED!");
         return;
     }
 
     // Stop all operations if emergency halt is active.
     if (is_emergency_halt_on) {
         handle_emergency_halt();
+        Serial.println("[!] EMERGENCY HALT EXITTED!");
         return;
     }
 
-    if (is_device_running_for_too_long) {
+    if (is_device_running_for_too_long()) {
         handle_device_running_for_too_long();
     }
 
