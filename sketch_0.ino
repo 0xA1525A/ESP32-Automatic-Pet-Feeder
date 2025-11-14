@@ -214,6 +214,7 @@ uint8_t  motor_rotation_speed       = 0;
 // Current device's physically readable/trackable variables:
 bool     is_dispensing              = false;
 bool     is_taring                  = false;
+bool     is_continuable_offline      = false;
 uint8_t  ignored_warning_amount     = 0;
 uint16_t tare_amount_since_boot     = 0;
 
@@ -256,9 +257,9 @@ void distribute_changes()          noexcept;
 void update_device_property()      noexcept;
 void dump_property()               noexcept;
 
-// void handle_tngr_update_signal()      noexcept; \  
+// void handle_tngr_update_signal()      noexcept; \
 // void handle_tngr_manual_feed_signal() noexcept;  } Cannot forward declare these guys because the compiler hated it.
-// void handle_tngr_tare_signal()        noexcept; /  
+// void handle_tngr_tare_signal()        noexcept; /
 void handle_never_tared()             noexcept;
 void finalise_handler()               noexcept;
 
@@ -431,6 +432,15 @@ void connect_to_wifi() noexcept {
 // Params: NONE
 // Returns: NONE
 void handle_wifi_disconnected() noexcept {
+    if (is_wifi_connected())
+        return;
+
+    // This device should for some reason  work offline.
+    if (is_data_valid()) {
+        is_continuable_offline = true;
+        return;
+    }
+
     while (!is_wifi_connected()) {
         set_rgb_led(LEDState::ON, ColourIndex::YELLOW);
 
@@ -440,6 +450,8 @@ void handle_wifi_disconnected() noexcept {
         // Blink to indicate reconnection attempt.
         set_rgb_led(LEDState::BLINK, ColourIndex::YELLOW, 2, 100, 100);
     }
+
+    is_continuable_offline = false;
 }
 
 // [FUNCTION SECTION - DATA VALIDITY]
@@ -476,8 +488,11 @@ void handle_data_invalid() noexcept {
 // Params: NONE
 // Returns: NONE
 void listen_for_tngr_interaction() noexcept {
+    if (is_continuable_offline && !is_emergency_halt_on)
+        return;
+
     const uint64_t CURRENT_TIME_MS = get_timestamp_ms();
-    
+
     // Only call handle function if its 500ms passed.
     if (CURRENT_TIME_MS - time_since_last_tngr_update_ms > 250 || time_since_last_tngr_update_ms == 0) {
         Serial.println("[!] LISTENING TO THINGER.IO");
@@ -618,6 +633,9 @@ void finalise_handler() noexcept {
 // Params: NONE
 // Returns: NONE
 void update_device_property() noexcept {
+    if (is_continuable_offline || is_emegerncy_halt_on && !is_emergency_halt_on)
+        return;
+
     // Get the latest property data from Thinger.io.
     Thing.get_property("general_property", data);
 
@@ -910,7 +928,7 @@ void loop() {
     timestamp_current_program_loop_ms = get_timestamp_ms();
 
     // Reconnect if Wi-Fi drops.
-    if (!is_wifi_connected()) {
+    if (!is_wifi_connected() && (!is_continuable_offline || is_emegerncy_halt_on)) {
         handle_wifi_disconnected();
         return;
     }
@@ -947,7 +965,7 @@ void loop() {
     }
 
     // Run active mode loop.
-    if (is_running_automatically) {
+    if (is_running_automatically || is_continuable_offline) {
         set_rgb_led(LEDState::ON, ColourIndex::WHITE);
         handle_automatic_mode_loop();
         set_rgb_led(LEDState::ON, ColourIndex::WHITE);
