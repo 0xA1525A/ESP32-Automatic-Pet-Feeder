@@ -61,7 +61,7 @@
 #define analog_write  analogWrite
 #define analog_read   analogRead
 #define digital_write digitalWrite
-#define digital_read  digtalRead
+#define digital_read  digitalRead
 
 // HX711_ADC's:
 #define set_calibration_factor setCalFactor
@@ -669,12 +669,12 @@ void dispense_food(const DispenseMode mode) noexcept {
     const uint16_t before_weight_g = get_load_cell_g();
     const uint16_t target_choices[2] = {
         /*AUTOMATIC*/ std::clamp(auto_feed_amount_g - before_weight_g, 0, static_cast<int>(auto_feed_amount_g)),
-        /*MANUAL*/    manual_feed_amount_g
+        /*MANUAL*/    before_weight_g + manual_feed_amount_g
     };
 
     const uint16_t target_weight_g = target_choices[static_cast<uint8_t>(mode)];
 
-    if (mode == DispenseMode::AUTOMATIC && target_weight_g == 0)
+    if (mode == DispenseMode::AUTOMATIC && target_weight_g == 0 || get_load_cell_g() >= target_weight_g)
         return;
 
     // Keep dispensing until I love you.
