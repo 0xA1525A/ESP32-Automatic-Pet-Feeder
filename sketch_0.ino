@@ -109,9 +109,9 @@ constexpr uint32_t BOARD_BAUD = 115200;
 
 // LEDs.
 constexpr uint8_t PIN_BUILT_IN_LED = 16;
-constexpr uint8_t PIN_RGBLED_R     = 25;
-constexpr uint8_t PIN_RGBLED_G     = 26;
-constexpr uint8_t PIN_RGBLED_B     = 27;
+constexpr uint8_t PIN_RGB_LED_R     = 25;
+constexpr uint8_t PIN_RGB_LED_G     = 26;
+constexpr uint8_t PIN_RGB_LED_B     = 27;
 
 // Bullshits.
 constexpr uint8_t PIN_RELAY_L298N_ENA = 18;
@@ -128,6 +128,8 @@ constexpr char *const TNGR_USERNAME    = "";
 constexpr char *const TNGR_DEVICE_ID   = "";
 constexpr char *const TNGR_DEVICE_CRED = "";
 
+constexpr uint8_t TNGR_UPDATE_INTERVAL_MS = 250;
+
 // WiFi's cconstants:
 constexpr char *const WIFI_SSID     = "";
 constexpr char *const WIFI_PASSWORD = "";
@@ -139,10 +141,10 @@ constexpr uint8_t AUTO_BYPASS_WARNING_AMOUNT = 10;
 constexpr uint8_t AUTO_BYPASS_FOOD_AMOUNT    = 20;
 
 // Accuracy related:
-constexpr uint16_t LOAD_CELL_STABILISE_TIME_MS  = 5000;
-constexpr float    LOAD_CELL_CALIBRATION_FACTOR = -1100.0f;
-constexpr int8_t   LOAD_CELL_SAMPLE_AMOUNT_POW  = 7;
-constexpr uint16_t LOAD_CELL_GHOST_WEIGHT_G     = 1201;
+constexpr uint16_t LOAD_CELL_STABILISE_TIME_MS    = 5000;
+constexpr float    LOAD_CELL_CALIBRATION_FACTOR   = -1100.0f;
+constexpr int8_t   LOAD_CELL_SAMPLE_AMOUNT_POW    = 7;
+constexpr uint8_t  LOAD_CELL_UPDATE_REPEAT_AMOUNT = 3;
 
 // [ENUMS]
 
@@ -305,16 +307,15 @@ void set_rgb_led(
     // Get the RGB value for the given colour index.
     const uint8_t *COLOUR_RGB = COLIDX_RGB_VMAP[static_cast<uint8_t>(colour)];
 
-    // Serial.printf("RGB Signal: %s (%d)\n", state == LEDState::OFF ? "OFF" : state == LEDState::ON ? "ON" : "BLINK", state == LEDState::OFF ? -1 : static_cast<uint8_t>(colour));
-
     // If state is ON/OFF only, or blinking parameters are not set.
-    if (static_cast<uint8_t>(state) <= 1 || (static_cast<uint16_t>(repeat_amount) | blink_up_duration_ms | blink_down_duration_ms) == static_cast<uint16_t>(0)) {
+    if (state != LEDState::BLINK || (static_cast<uint16_t>(repeat_amount) | blink_up_duration_ms | blink_down_duration_ms) == static_cast<uint16_t>(0)) {
         // Convert LEDState to boolean.
-        const bool use_rgb_value = static_cast<bool>(state);
+        const bool    USE_RGB_VALUE = static_cast<bool>(state);
+        const uint8_t RGB_OFF_VALUE = 0x00;
 
-        analog_write(PIN_RGBLED_R, use_rgb_value ? COLOUR_RGB[0] : 0x00);
-        analog_write(PIN_RGBLED_G, use_rgb_value ? COLOUR_RGB[1] : 0x00);
-        analog_write(PIN_RGBLED_B, use_rgb_value ? COLOUR_RGB[2] : 0x00);
+        analog_write(PIN_RGB_LED_R, USE_RGB_VALUE ? /*R*/ COLOUR_RGB[0] : RGB_OFF_VALUE);
+        analog_write(PIN_RGB_LED_G, USE_RGB_VALUE ? /*G*/ COLOUR_RGB[1] : RGB_OFF_VALUE);
+        analog_write(PIN_RGB_LED_B, USE_RGB_VALUE ? /*B*/ COLOUR_RGB[2] : RGB_OFF_VALUE);
 
         return;
     }
@@ -324,7 +325,7 @@ void set_rgb_led(
     delay(blink_down_duration_ms);
 
     // Blink loop
-    for (uint8_t blinked = 0; blinked < repeat_amount; ++blinked) {
+    for (uint8_t _ = 0; _ < repeat_amount; ++_) {
         set_rgb_led(LEDState::ON, colour);
         delay(blink_up_duration_ms);
         set_rgb_led(LEDState::OFF);
@@ -340,7 +341,8 @@ void set_rgb_led(
 // Params: NONE
 // Returns: NONE
 void update_load_cell() noexcept {
-    for (uint8_t _ = 0; _ < 3; ++_)
+
+    for (uint8_t _ = 0; _ < LOAD_CELL_UPDATE_REPEAT_AMOUNT; ++_)
         LoadCell.update();
 }
 
@@ -358,13 +360,13 @@ uint16_t get_load_cell_g() noexcept {
         float raw = LoadCell.get_data();
 
         // WEIGHT MUST NOT BE NEGATIVE BECAUSE OTHERWISE THE FOOD WOULD FLY OFF.
-        sum_of_weight_g += raw < 0 ? 0 : raw;
+        sum_of_weight_g += std::max(0.0f, raw);
     }
 
-    // Divided by the amount of reading amount.
-    const uint16_t avg_weight_g = sum_of_weight_g >> LOAD_CELL_SAMPLE_AMOUNT_POW;
+    // Divided by the amount of reading.
+    const uint16_t AVG_WEIGHT_G = sum_of_weight_g >> LOAD_CELL_SAMPLE_AMOUNT_POW;
 
-    return avg_weight_g < 0 ? 0 : avg_weight_g;
+    return std::max(static_cast<uint16_t>(0), AVG_WEIGHT_G);
 }
 
 // [FUNCTION SECTION - DEVICE STATE CHECKERS]
@@ -383,7 +385,7 @@ bool is_met_dispense_condition() noexcept {
 // Returns: (bool) true if the device is indeed running for too long, false otherwise.
 bool is_device_running_for_too_long() noexcept {
     // 30 days uptime limit in ms;
-    constexpr uint32_t UPTIME_LIMIT_MS = 30UL * 24UL * 60UL * 60UL * 1000UL;
+    constexpr uint64_t UPTIME_LIMIT_MS = 0x9ACB4000UL;
 
     return get_timestamp_ms() > UPTIME_LIMIT_MS;
 }
@@ -479,7 +481,7 @@ void listen_for_tngr_interaction() noexcept {
     const uint64_t CURRENT_TIME_MS = get_timestamp_ms();
     
     // Only call handle function if its 500ms passed.
-    if (CURRENT_TIME_MS - time_since_last_tngr_update_ms > 250 || time_since_last_tngr_update_ms == 0) {
+    if ((CURRENT_TIME_MS - time_since_last_tngr_update_ms) > TNGR_UPDATE_INTERVAL_MS || time_since_last_tngr_update_ms == 0) {
         Serial.println("[!] LISTENING TO THINGER.IO");
         Thing.handle();
 
@@ -571,7 +573,7 @@ void handle_tngr_tare_signal(pson &in) noexcept {
     set_rgb_led(LEDState::ON, ColourIndex::YELLOW);
 
     // Tare until the load cell reading is 0.
-    while (true) {
+    for (;;) {
         update_load_cell();
         LoadCell.tare();
 
@@ -665,20 +667,20 @@ void dispense_food(const DispenseMode mode) noexcept {
     set_rgb_led(LEDState::ON, ColourIndex::GREEN);
     Serial.printf("Current weight: %d\n", get_load_cell_g());
 
-    const bool initial_is_running_automatically = is_running_automatically;
-    const uint16_t before_weight_g = get_load_cell_g();
-    const uint16_t target_choices[2] = {
-        /*AUTOMATIC*/ std::clamp(auto_feed_amount_g - before_weight_g, 0, static_cast<int>(auto_feed_amount_g)),
-        /*MANUAL*/    before_weight_g + manual_feed_amount_g
+    const bool INITIAL_IS_RUNNING_AUTOMATICALLY = is_running_automatically;
+    const uint16_t BEFORE_WEIGHT_G = get_load_cell_g();
+    const uint16_t TARGET_CHOICES[2] = {
+        /*AUTOMATIC*/ std::clamp(auto_feed_amount_g - BEFORE_WEIGHT_G, 0, static_cast<int>(auto_feed_amount_g)),
+        /*MANUAL*/    BEFORE_WEIGHT_G + manual_feed_amount_g
     };
 
-    const uint16_t target_weight_g = target_choices[static_cast<uint8_t>(mode)];
+    const uint16_t TARGET_WEIGHT_G = TARGET_CHOICES[static_cast<uint8_t>(mode)];
 
-    if (mode == DispenseMode::AUTOMATIC && target_weight_g == 0 || get_load_cell_g() >= target_weight_g)
+    if (mode == DispenseMode::AUTOMATIC && TARGET_WEIGHT_G == 0 || get_load_cell_g() >= TARGET_WEIGHT_G)
         return;
 
     // Keep dispensing until I love you.
-    while (get_load_cell_g() < target_weight_g) {
+    while (get_load_cell_g() < TARGET_WEIGHT_G) {
         Serial.printf("Current weight: %d\n", get_load_cell_g());
         set_rgb_led(LEDState::ON, ColourIndex::GREEN);
 
@@ -694,7 +696,7 @@ void dispense_food(const DispenseMode mode) noexcept {
         listen_for_tngr_interaction();
 
         // If the mode is changed, exit immediately.
-        if (initial_is_running_automatically != is_running_automatically) {
+        if (INITIAL_IS_RUNNING_AUTOMATICALLY != is_running_automatically) {
             Motor.stop();
             is_dispensing = false;
 
@@ -830,9 +832,9 @@ void handle_emergency_halt() noexcept {
 // Params: NONE
 // Returns: NONE
 void setup_pin_mode() noexcept {
-    pin_mode(PIN_RGBLED_R, OUTPUT);
-    pin_mode(PIN_RGBLED_G, OUTPUT);
-    pin_mode(PIN_RGBLED_B, OUTPUT);
+    pin_mode(PIN_RGB_LED_R, OUTPUT);
+    pin_mode(PIN_RGB_LED_G, OUTPUT);
+    pin_mode(PIN_RGB_LED_B, OUTPUT);
 
     pin_mode(PIN_RELAY_L298N_1, OUTPUT);
     pin_mode(PIN_RELAY_L298N_2, OUTPUT);
@@ -922,6 +924,7 @@ void loop() {
 
     Serial.printf("Current weight: %d\n", get_load_cell_g());
 
+    // Enforce taring on boot.
     if (tare_amount_since_boot == 0) {
         handle_never_tared();
         return;
