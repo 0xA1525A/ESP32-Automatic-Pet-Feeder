@@ -1,69 +1,26 @@
-# Automatic Pet Feeder [PROTOTYPE] on ESPino32
+# Automatic Pet Feeder [Prototype] using ESP32
 
-Hardware Specifications:
-- Board: ESPino32 - [/dev/ttyUSB0 (ESP32 Dev Module)].
-- Relay: L298N.
-- Load Cell: Model remains unknown, but it has HX711 ampliflier.
-- Wires: Yes.
+A prototype IoT pet feeder built with ESP32, relay control, load cell measurement, and cloud dashboard integration.
 
-Software Specifications:
-- Cloud Dashboard: Thinger.io.
-- Version Controls: GitHub (Somtimes ~/.proj/apf/v.xyz if I hate myself enough.)
-- Bugs: Included (as features)
+## Features
+- Scheduled feeding
+- Remote monitoring
+- Weight detection using HX711 load cell amplifier
+- Cloud dashboard via Thinger.io
 
-Contact abt this project?: YES! Until the world caved in.
-Can you hire me?: YES PLEASE!!!!!!!! I'M TIRED OF WASHING DISHES!!!!
+## Hardware
+- ESP32 Dev Module
+- L298N Relay/Motor Driver
+- Load Cell + HX711
+- Servo/Motor feeder mechanism
 
-```diff
-- I CAN'T STOP THE LONELINESS!
-+ I CAN'T HOLD BACK, MY SORROW DOESN'T STOP.
+## Software
+- Arduino / ESP32 firmware
+- Wi-Fi connectivity
+- Cloud telemetry
 
-- I CAN'T STOP THE LONELINESS!
-+ WHY WON'T THE SADNESS STOP..
+## Status
+Prototype completed and functional. Future improvements planned.
 
-YOUR GIRLFRIEND
-I STILL REGRET THAT YOU MET HER
-YOU TWO FELT SYMPATHY
-THAT AFTERNOON ON THE CAFE TERRACE
-
-THAT DAY THE PHONE
-IT RANG
-IT WAS HER TELLING ME TO BREAK UP WITH YOU
-
-- I CAN'T STOP THE LONELINESS
-+ WHY WON'T THE SADNESS STOP..
-
-IT'S A "MISUNDERSTANDING"
-YOU SMILED, BUT YOUR KISS..
-IT SMELLS LIKE LIES
-
-AND WHILE YOU WERE HUGGING ME, I NOTICED
-THAT THERE WAS NO.. LOVE..
-
-LOVE IS SMALL,
-LIKE A STORM
-BOTH FRIENDS AND LOVERS
-SWEPT AWAY!!!!
-
-- I CAN'T STOP THE LONELINESS!
-+ GIVE HIM BACK, MY SORROW DOESN'T STOP.
-
-- I CAN'T STOP!
-- THE LONELINESS.
-+ SOMEONE HELP ME, MY SORROW DOESN'T STOP.
-
-- I CAN'T STOP!
-- THE LONELINESS.
-+ I CAN'T HOLD BACK, MY SORROW DOESN'T STOP.
-
-- I CAN'T STOP THE LONELINESS!
-+ WHY WON'T THE SADNESS STOP..
-
-- I CAN'T STOP!
-- THE LONELINESS.
-+ WHY WON'T THE SADNESS STOP..
-
-- I CAN'T STOP!.
-
-```
-> Made with Love.
+## Note
+Some bugs were discovered by the cat first.
